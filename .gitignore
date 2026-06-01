@@ -1,5 +1,23 @@
-myenv
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+myenv/
+*.egg-info/
+
+# Django
 db.sqlite3
 db.**
-media
-staticfiles
+media/
+staticfiles/
+
+# Env / secrets
+.env
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# Generated artifacts
+schema.yml
