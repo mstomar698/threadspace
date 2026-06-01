@@ -56,9 +56,16 @@ flowchart LR
   comments, search. OpenAPI schema at `/api/schema/`, Swagger UI at `/api/docs/`.
 - 24 tests passing (auth, permissions, feed scoping, like/follow toggles, comments, search).
 
-## Phase 2 - Next.js + TypeScript frontend
+## Phase 2 - Next.js + TypeScript frontend (core app done)
 
-- New `frontend/` app (App Router, TS, Tailwind, TanStack Query); rebuild feed/profile/project/composer/search/auth; retire Django templates; typed client from OpenAPI.
+- Built `frontend/` (Next.js 16 App Router, TS, Tailwind v4, TanStack Query) with a
+  dark-first, GitHub/Linear-style design system.
+- JWT auth (token store + transparent refresh), typed fetch client, auth context.
+- Screens: login/register with route guards, infinite-scroll feed + composer, post cards
+  with optimistic likes and inline comments, profile pages with follow/stats, user search.
+  Production build + typecheck + lint all green.
+- Remaining/optional: retire the old Django templates once the SPA fully replaces them;
+  generate the typed client directly from the OpenAPI schema; richer profile editing.
 
 ## Phase 3 - GitHub integration (the differentiator)
 

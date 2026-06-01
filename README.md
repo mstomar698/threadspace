@@ -46,6 +46,20 @@ A versioned REST API (Django REST Framework, JWT auth) is available under `/api/
 
 Interactive docs (Swagger UI): `/api/docs/`. OpenAPI schema: `/api/schema/`.
 
+## Frontend
+
+A Next.js + TypeScript + Tailwind client lives in [frontend/](frontend/). Run the
+Django API first, then:
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local
+npm run dev   # http://localhost:3000
+```
+
+For local dev, set `DEBUG=True` in the backend `.env` so uploaded media is served.
+
 ## Development
 
 ```bash
