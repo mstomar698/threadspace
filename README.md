@@ -7,12 +7,12 @@ people and projects, and discover what others are shipping.
 This started as a first-year Django social-media clone and is being scaled into a
 properly engineered, full-stack project. See [docs/PLAN.md](docs/PLAN.md) for the roadmap.
 
-## Tech (current + planned)
+## Tech
 
-- Backend: Django 5 (Django REST Framework API in Phase 1)
-- Frontend: Next.js + TypeScript (Phase 2)
-- Realtime/ingestion: Rust service (Phase 4)
-- Data: Postgres (SQLite for local dev), Redis
+- Backend: Django 5 + Django REST Framework (JWT, OpenAPI)
+- Frontend: Next.js + TypeScript + Tailwind
+- Realtime/ingestion: Rust gateway (axum + tokio) in [realtime/](realtime/)
+- Data: Postgres (SQLite for local dev), optional Redis for multi-instance fan-out
 
 ## Local setup
 
@@ -59,6 +59,23 @@ npm run dev   # http://localhost:3000
 ```
 
 For local dev, set `DEBUG=True` in the backend `.env` so uploaded media is served.
+
+## Realtime gateway (Rust)
+
+A separate Rust service ([realtime/](realtime/)) ingests GitHub webhooks and
+delivers live activity to the feed over WebSocket. The web app works without it;
+set `REALTIME_URL` (backend) and `NEXT_PUBLIC_REALTIME_URL` (frontend) to enable
+the live feed.
+
+```bash
+cd realtime
+cargo run        # listening on 0.0.0.0:8080
+cargo test
+```
+
+When the gateway is running, creating a post fans the event out to the author's
+followers and the feed shows a live "new updates" pill. See
+[realtime/README.md](realtime/README.md) for endpoints and configuration.
 
 ## Development
 

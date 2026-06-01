@@ -1,6 +1,6 @@
 # Scale ThreadSpace into an Open-Source Build-in-Public Social Platform
 
-> Living roadmap. Phase 0 is in progress. Deployment (Oracle Always Free tier) is deferred.
+> Living roadmap. Phases 0-4 are done. Deployment (Oracle Always Free tier) is deferred.
 
 ## The product angle (unique, not Reddit, not Instagram)
 
@@ -32,7 +32,7 @@ flowchart LR
 
 - **Backend API**: Django + Django REST Framework (Python) - clean models, JWT auth, OpenAPI docs, pytest tests.
 - **Frontend**: Next.js + TypeScript + Tailwind - modern, polished UI replacing the static UIkit templates.
-- **Rust service**: high-throughput GitHub webhook ingestion + activity-feed fan-out + a WebSocket gateway for the live feed (axum + sqlx + redis).
+- **Rust service**: high-throughput GitHub webhook ingestion + activity-feed fan-out + a WebSocket gateway for the live feed (axum + tokio, optional Redis pub/sub for multi-instance fan-out).
 - **Infra (local only for now)**: Postgres + Redis via `docker-compose`. Deployment to Oracle free tier deferred.
 
 ## Phase 0 - Foundations and cleanup (in progress)
@@ -80,9 +80,28 @@ flowchart LR
 - Remaining/optional: GitHub OAuth "Connect GitHub" + repo import (needs an OAuth app /
   secrets, so deferred); auto-posting releases via webhooks lands in Phase 4 (Rust).
 
-## Phase 4 - Rust service + real-time (polyglot standout)
+## Phase 4 - Rust service + real-time (polyglot standout, done)
 
-- Rust service (axum + sqlx + redis): webhook ingestion (signature-verified), feed fan-out via Redis, WebSocket live-feed endpoint for the Next.js feed.
+- Rust realtime gateway in [realtime/](../realtime) (axum + tokio): a separate,
+  non-blocking delivery service so Django never waits on socket I/O.
+  - **Webhook ingestion**: `POST /webhooks/github` verifies the
+    `X-Hub-Signature-256` HMAC and turns published releases / non-empty pushes
+    into activity events.
+  - **Fan-out**: Django owns the social graph, so a `post_save` signal computes
+    the author's followers and `POST`s the event (with audience) to the gateway's
+    token-authenticated `/internal/publish`. Publishing is fire-and-forget on a
+    background thread and a no-op when `REALTIME_URL` is unset.
+  - **Live feed**: `GET /ws?user=<name>` streams targeted events; the in-memory
+    Tokio broadcast hub filters each delivery by audience. Optional Redis pub/sub
+    bridge (`--features redis`) for multi-instance fan-out.
+  - **Frontend**: `useLiveFeed` hook subscribes over WebSocket (auto-reconnect
+    with backoff) and surfaces a sticky "N new updates" pill that refetches the
+    feed on click.
+  - Verified: 11 Rust unit tests (signature, parsing, routing, hub), 4 Django
+    fan-out tests, and a live WS + webhook end-to-end smoke test.
+- Remaining/optional: persist webhook events to Postgres for an activity
+  timeline; GitHub OAuth "Connect GitHub" + repo import; auto-post releases as
+  devlogs (currently broadcast as live events only).
 
 ## Notes / deferred
 
