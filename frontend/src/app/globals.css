@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/*
+  ThreadSpace design tokens - dark-first, GitHub/Linear-style developer aesthetic.
+*/
+@theme {
+  --color-bg: #0a0c10;
+  --color-surface: #0f131a;
+  --color-surface-2: #151b24;
+  --color-elevated: #1a212c;
+  --color-border: #20283340;
+  --color-border-strong: #2c3644;
+  --color-fg: #e6edf3;
+  --color-muted: #8b97a6;
+  --color-faint: #5a6473;
+
+  --color-accent: #7c5cff;
+  --color-accent-hover: #6b4ef0;
+  --color-accent-fg: #ffffff;
+  --color-accent-soft: rgba(124, 92, 255, 0.14);
+
+  --color-success: #3fb950;
+  --color-danger: #f85149;
+  --color-warning: #d29922;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+
+  --radius: 0.75rem;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-border-strong);
+  }
+
+  ::selection {
+    background-color: var(--color-accent-soft);
+  }
+
+  /* Subtle, dev-tool-style scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    backdrop-filter: blur(12px);
+  }
+}
