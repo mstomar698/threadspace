@@ -5,10 +5,12 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
     CommentViewSet,
+    GithubResolveView,
     MeView,
     PostViewSet,
     ProfileViewSet,
     RegisterView,
+    RepoDetailView,
 )
 
 router = DefaultRouter()
@@ -23,8 +25,14 @@ auth_patterns = [
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
 ]
 
+github_patterns = [
+    path("resolve/", GithubResolveView.as_view(), name="github-resolve"),
+    path("repos/<str:owner>/<str:name>/", RepoDetailView.as_view(), name="repo-detail"),
+]
+
 urlpatterns = [
     path("v1/auth/", include(auth_patterns)),
+    path("v1/github/", include(github_patterns)),
     path("v1/", include(router.urls)),
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path(

@@ -4,7 +4,9 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from core.github import RepoFetchError, RepoNotFound, get_or_refresh_repo
 from core.models import Comment, Follow, Like, Post, Profile
 
 from .pagination import FeedCursorPagination
@@ -14,9 +16,50 @@ from .serializers import (
     PostSerializer,
     ProfileSerializer,
     RegisterSerializer,
+    RepoResolveSerializer,
+    RepoSerializer,
 )
 
 User = get_user_model()
+
+
+def _resolve_repo_response(identifier):
+    """Shared resolve logic returning a DRF Response (repo data or error)."""
+    try:
+        repo = get_or_refresh_repo(identifier)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except RepoNotFound:
+        return Response(
+            {"detail": "Repository not found on GitHub."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    except RepoFetchError:
+        return Response(
+            {"detail": "Could not reach GitHub, try again."},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+    return Response(RepoSerializer(repo).data)
+
+
+class GithubResolveView(APIView):
+    """Resolve a GitHub URL or owner/name into enriched repo metadata."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(request=RepoResolveSerializer, responses=RepoSerializer)
+    def post(self, request):
+        return _resolve_repo_response(request.data.get("q", ""))
+
+
+class RepoDetailView(APIView):
+    """Project page data: enriched metadata for owner/name."""
+
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    @extend_schema(responses=RepoSerializer)
+    def get(self, request, owner, name):
+        return _resolve_repo_response(f"{owner}/{name}")
 
 
 class RegisterView(generics.CreateAPIView):
@@ -99,7 +142,7 @@ class PostViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Post.objects.select_related("user", "user__profile").annotate(
+        qs = Post.objects.select_related("user", "user__profile", "repo").annotate(
             num_likes=Count("likes", distinct=True),
             comments_count=Count("comments", distinct=True),
         )
@@ -108,7 +151,10 @@ class PostViewSet(viewsets.ModelViewSet):
         author = self.request.query_params.get("author")
         if author:
             qs = qs.filter(user__username=author)
-        return qs
+        repo = self.request.query_params.get("repo")
+        if repo:
+            qs = qs.filter(repo__full_name__iexact=repo)
+        return qs.order_by("-created_at")
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)

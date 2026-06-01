@@ -2,9 +2,38 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from core.models import Comment, Follow, Like, Post, Profile
+from core.github import (
+    RepoFetchError,
+    RepoNotFound,
+    get_or_refresh_repo,
+)
+from core.models import Comment, Follow, Like, Post, Profile, Repo
 
 User = get_user_model()
+
+
+class RepoResolveSerializer(serializers.Serializer):
+    q = serializers.CharField(help_text="A GitHub repo URL or 'owner/name'.")
+
+
+class RepoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Repo
+        fields = [
+            "full_name",
+            "name",
+            "owner_login",
+            "owner_avatar_url",
+            "html_url",
+            "description",
+            "homepage",
+            "language",
+            "topics",
+            "stargazers_count",
+            "forks_count",
+            "open_issues_count",
+            "pushed_at",
+        ]
 
 
 class AuthorSerializer(serializers.ModelSerializer):
@@ -86,6 +115,8 @@ class ProfileSerializer(serializers.ModelSerializer):
 
 class PostSerializer(serializers.ModelSerializer):
     author = AuthorSerializer(source="user", read_only=True)
+    repo = RepoSerializer(read_only=True)
+    repo_full_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     num_likes = serializers.SerializerMethodField()
     comments_count = serializers.SerializerMethodField()
     liked = serializers.SerializerMethodField()
@@ -97,12 +128,31 @@ class PostSerializer(serializers.ModelSerializer):
             "author",
             "caption",
             "image",
+            "repo",
+            "repo_full_name",
             "created_at",
             "num_likes",
             "comments_count",
             "liked",
         ]
         read_only_fields = ["id", "created_at"]
+
+    def create(self, validated_data):
+        full_name = (validated_data.pop("repo_full_name", "") or "").strip()
+        if full_name:
+            try:
+                validated_data["repo"] = get_or_refresh_repo(full_name)
+            except ValueError as exc:
+                raise serializers.ValidationError({"repo_full_name": str(exc)}) from exc
+            except RepoNotFound as exc:
+                raise serializers.ValidationError(
+                    {"repo_full_name": "Repository not found on GitHub."}
+                ) from exc
+            except RepoFetchError as exc:
+                raise serializers.ValidationError(
+                    {"repo_full_name": "Could not reach GitHub, try again."}
+                ) from exc
+        return super().create(validated_data)
 
     def get_num_likes(self, obj) -> int:
         if hasattr(obj, "num_likes"):
