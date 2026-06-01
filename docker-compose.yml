@@ -1,0 +1,80 @@
+name: threadspace
+
+# One-command local stack: Postgres + Redis + Django API + Rust realtime
+# gateway + Next.js frontend. Runs with zero config (sensible dev defaults);
+# override secrets via a local .env or your shell environment.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: threadspace
+      POSTGRES_PASSWORD: threadspace
+      POSTGRES_DB: threadspace
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U threadspace"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  realtime:
+    build: ./realtime
+    environment:
+      PORT: "8080"
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-dev-internal-token}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      REDIS_URL: redis://redis:6379
+      RUST_LOG: info
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  backend:
+    build: .
+    environment:
+      DEBUG: "True"
+      SECRET_KEY: ${SECRET_KEY:-django-insecure-docker-dev-key}
+      ALLOWED_HOSTS: "localhost,127.0.0.1,backend"
+      DATABASE_URL: postgres://threadspace:threadspace@db:5432/threadspace
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+      REALTIME_URL: http://realtime:8080
+      REALTIME_INTERNAL_TOKEN: ${INTERNAL_TOKEN:-dev-internal-token}
+      GITHUB_API_TOKEN: ${GITHUB_API_TOKEN:-}
+    volumes:
+      - media:/app/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_REALTIME_URL: ws://localhost:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  media:

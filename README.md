@@ -14,6 +14,31 @@ properly engineered, full-stack project. See [docs/PLAN.md](docs/PLAN.md) for th
 - Realtime/ingestion: Rust gateway (axum + tokio) in [realtime/](realtime/)
 - Data: Postgres (SQLite for local dev), optional Redis for multi-instance fan-out
 
+## Run the whole stack with Docker
+
+The fastest way to bring up everything (Postgres, Redis, Django API, Rust
+realtime gateway, Next.js frontend):
+
+```bash
+docker compose up --build
+```
+
+- Frontend: http://localhost:3000
+- API + Swagger docs: http://localhost:8000/api/docs/
+- Realtime gateway: http://localhost:8080/health
+
+It runs with zero config using dev defaults. To override secrets (e.g. a real
+`SECRET_KEY`, `INTERNAL_TOKEN`, `GITHUB_API_TOKEN`, `GITHUB_WEBHOOK_SECRET`),
+put them in a root `.env` or your shell before running compose.
+
+Create an admin user once the stack is up:
+
+```bash
+docker compose exec backend python manage.py createsuperuser
+```
+
+To develop a single service without Docker, follow the steps below.
+
 ## Local setup
 
 ```bash

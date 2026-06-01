@@ -1,0 +1,21 @@
+# Build context for the Django backend image — keep it small and secret-free.
+.git
+.github
+.vscode
+.venv
+venv
+myenv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.env
+db.sqlite3
+media
+staticfiles
+schema.yml
+
+# Other services have their own build contexts.
+frontend
+realtime
+docs
