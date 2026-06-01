@@ -26,6 +26,13 @@ class Post(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="posts")
     image = models.ImageField(upload_to="post_images")
     caption = models.TextField(blank=True)
+    repo = models.ForeignKey(
+        "Repo",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="posts",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -52,6 +59,31 @@ class Like(models.Model):
 
     def __str__(self):
         return f"{self.user} likes {self.post_id}"
+
+
+class Repo(models.Model):
+    """Cached, enriched metadata for a GitHub repository (a 'project')."""
+
+    full_name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=120)
+    owner_login = models.CharField(max_length=120)
+    owner_avatar_url = models.URLField(blank=True)
+    html_url = models.URLField()
+    description = models.TextField(blank=True)
+    homepage = models.URLField(blank=True)
+    language = models.CharField(max_length=60, blank=True)
+    topics = models.JSONField(default=list, blank=True)
+    stargazers_count = models.IntegerField(default=0)
+    forks_count = models.IntegerField(default=0)
+    open_issues_count = models.IntegerField(default=0)
+    pushed_at = models.DateTimeField(null=True, blank=True)
+    fetched_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["full_name"]
+
+    def __str__(self):
+        return self.full_name
 
 
 class Comment(models.Model):

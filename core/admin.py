@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Comment, Follow, Like, Post, Profile
+from .models import Comment, Follow, Like, Post, Profile, Repo
 
 
 @admin.register(Profile)
@@ -34,3 +34,9 @@ class CommentAdmin(admin.ModelAdmin):
     list_display = ("user", "post", "body", "created_at")
     autocomplete_fields = ("user", "post", "parent")
     search_fields = ("user__username", "body")
+
+
+@admin.register(Repo)
+class RepoAdmin(admin.ModelAdmin):
+    list_display = ("full_name", "language", "stargazers_count", "fetched_at")
+    search_fields = ("full_name", "description")

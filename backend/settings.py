@@ -166,3 +166,6 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = env.list(
     "CORS_ALLOWED_ORIGINS", default=["http://localhost:3000", "http://127.0.0.1:3000"]
 )
+
+# Optional GitHub token to raise the public API rate limit for repo enrichment.
+GITHUB_API_TOKEN = env("GITHUB_API_TOKEN", default="")
