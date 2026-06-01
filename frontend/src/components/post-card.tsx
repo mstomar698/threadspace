@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Avatar } from "./ui/avatar";
 import { CommentSection } from "./comment-section";
+import { RepoCard } from "./repo-card";
 
 export function PostCard({ post }: { post: Post }) {
   const toggleLike = useToggleLike();
@@ -43,6 +44,12 @@ export function PostCard({ post }: { post: Post }) {
         <p className="whitespace-pre-wrap px-4 pb-3 text-[15px] leading-relaxed">
           {post.caption}
         </p>
+      )}
+
+      {post.repo && (
+        <div className="px-4 pb-3">
+          <RepoCard repo={post.repo} />
+        </div>
       )}
 
       {post.image && (

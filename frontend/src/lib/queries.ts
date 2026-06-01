@@ -11,6 +11,7 @@ import type {
   Paginated,
   Post,
   Profile,
+  Repo,
 } from "./types";
 
 export const keys = {
@@ -18,6 +19,8 @@ export const keys = {
   profile: (username: string) => ["profile", username] as const,
   comments: (postId: string) => ["comments", postId] as const,
   search: (q: string) => ["search", q] as const,
+  repo: (fullName: string) => ["repo", fullName] as const,
+  projectPosts: (fullName: string) => ["project-posts", fullName] as const,
 };
 
 export function useFeed() {
@@ -69,6 +72,29 @@ export function useCreatePost() {
   return useMutation({
     mutationFn: (form: FormData) => api.postForm<Post>("/posts/", form),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.feed }),
+  });
+}
+
+export function useResolveRepo() {
+  return useMutation({
+    mutationFn: (q: string) => api.post<Repo>("/github/resolve/", { q }),
+  });
+}
+
+export function useRepo(owner: string, name: string) {
+  return useQuery({
+    queryKey: keys.repo(`${owner}/${name}`),
+    queryFn: () => api.get<Repo>(`/github/repos/${owner}/${name}/`),
+    enabled: !!owner && !!name,
+  });
+}
+
+export function useProjectPosts(fullName: string) {
+  return useQuery({
+    queryKey: keys.projectPosts(fullName),
+    queryFn: () =>
+      api.get<Paginated<Post>>(`/posts/?repo=${encodeURIComponent(fullName)}`),
+    enabled: !!fullName,
   });
 }
 

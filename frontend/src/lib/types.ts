@@ -16,11 +16,28 @@ export interface Profile {
   created_at: string;
 }
 
+export interface Repo {
+  full_name: string;
+  name: string;
+  owner_login: string;
+  owner_avatar_url: string;
+  html_url: string;
+  description: string;
+  homepage: string;
+  language: string;
+  topics: string[];
+  stargazers_count: number;
+  forks_count: number;
+  open_issues_count: number;
+  pushed_at: string | null;
+}
+
 export interface Post {
   id: string;
   author: Author;
   caption: string;
   image: string;
+  repo: Repo | null;
   created_at: string;
   num_likes: number;
   comments_count: number;
