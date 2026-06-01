@@ -67,9 +67,18 @@ flowchart LR
 - Remaining/optional: retire the old Django templates once the SPA fully replaces them;
   generate the typed client directly from the OpenAPI schema; richer profile editing.
 
-## Phase 3 - GitHub integration (the differentiator)
+## Phase 3 - GitHub integration (core differentiator done)
 
-- GitHub OAuth + "Connect GitHub" (encrypted tokens); attach/enrich GitHub artifacts; project pages from imported repos.
+- `Repo` model caching enriched GitHub metadata (stars, forks, language, topics, etc.),
+  plus an optional `Post.repo` link so devlogs can reference a project.
+- GitHub enrichment service ([core/github.py](../core/github.py)): parses URLs/`owner/name`,
+  fetches from the public GitHub API (optional `GITHUB_API_TOKEN`), and caches with a TTL.
+- API: `POST /api/v1/github/resolve/`, `GET /api/v1/github/repos/<owner>/<name>/`,
+  attach a repo on post create via `repo_full_name`, and `GET /posts/?repo=owner/name`.
+- Frontend: composer "Repo" attach with live preview, repo cards on posts, and project
+  pages at `/projects/[owner]/[name]` listing the project's devlogs.
+- Remaining/optional: GitHub OAuth "Connect GitHub" + repo import (needs an OAuth app /
+  secrets, so deferred); auto-posting releases via webhooks lands in Phase 4 (Rust).
 
 ## Phase 4 - Rust service + real-time (polyglot standout)
 
