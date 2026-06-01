@@ -105,6 +105,9 @@ class PostViewSet(viewsets.ModelViewSet):
         )
         if user.is_authenticated:
             qs = qs.annotate(liked=Exists(Like.objects.filter(post=OuterRef("pk"), user=user)))
+        author = self.request.query_params.get("author")
+        if author:
+            qs = qs.filter(user__username=author)
         return qs
 
     def perform_create(self, serializer):

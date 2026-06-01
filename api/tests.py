@@ -120,6 +120,14 @@ class TestPosts:
         resp = auth_alice.post(f"/api/v1/posts/{post.id}/like/")
         assert resp.data == {"liked": False, "num_likes": 0}
 
+    def test_filter_posts_by_author(self, auth_alice, bob):
+        Post.objects.create(user=bob, image=tiny_image(), caption="by-bob")
+        carol = make_user("carol")
+        Post.objects.create(user=carol, image=tiny_image(), caption="by-carol")
+        resp = auth_alice.get("/api/v1/posts/?author=bob")
+        captions = {p["caption"] for p in resp.data["results"]}
+        assert captions == {"by-bob"}
+
     def test_feed_only_followed_and_self(self, api, alice, bob):
         carol = make_user("carol")
         Post.objects.create(user=bob, image=tiny_image(), caption="from-bob")
