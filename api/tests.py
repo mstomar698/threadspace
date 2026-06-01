@@ -5,9 +5,27 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from core.models import Comment, Follow, Post, Profile
+from core.models import Comment, Follow, Post, Profile, Repo
 
 User = get_user_model()
+
+
+def sample_repo_payload(full_name="django/django"):
+    owner, name = full_name.split("/")
+    return {
+        "full_name": full_name,
+        "name": name,
+        "owner": {"login": owner, "avatar_url": "https://avatars.example/u.png"},
+        "html_url": f"https://github.com/{full_name}",
+        "description": "The Web framework for perfectionists with deadlines.",
+        "homepage": "https://www.djangoproject.com/",
+        "language": "Python",
+        "topics": ["python", "web"],
+        "stargazers_count": 79000,
+        "forks_count": 31000,
+        "open_issues_count": 120,
+        "pushed_at": "2026-05-30T00:00:00Z",
+    }
 
 
 def make_user(username, password="testpass123!"):
@@ -44,6 +62,17 @@ def bob(db):
 def auth_alice(api, alice):
     api.force_authenticate(user=alice)
     return api
+
+
+@pytest.fixture
+def mock_github(monkeypatch):
+    from core import github
+
+    def fake_fetch(full_name):
+        return sample_repo_payload(full_name)
+
+    monkeypatch.setattr(github, "fetch_repo_metadata", fake_fetch)
+    return fake_fetch
 
 
 class TestAuth:
@@ -179,3 +208,66 @@ class TestProfilesAndComments:
         resp = auth_alice.get("/api/v1/profiles/?search=zeb")
         usernames = {p["username"] for p in resp.data["results"]}
         assert "zebra" in usernames
+
+
+class TestGitHub:
+    def test_parse_identifier_variants(self):
+        from core.github import parse_repo_identifier
+
+        assert parse_repo_identifier("django/django") == "django/django"
+        assert parse_repo_identifier("https://github.com/django/django") == "django/django"
+        assert parse_repo_identifier("https://github.com/django/django.git") == "django/django"
+        assert parse_repo_identifier("https://github.com/django/django/issues/1") == "django/django"
+
+    def test_parse_identifier_rejects_garbage(self):
+        from core.github import parse_repo_identifier
+
+        with pytest.raises(ValueError):
+            parse_repo_identifier("not a repo")
+        with pytest.raises(ValueError):
+            parse_repo_identifier("https://gitlab.com/foo/bar")
+
+    def test_resolve_repo(self, auth_alice, mock_github):
+        resp = auth_alice.post(
+            "/api/v1/github/resolve/",
+            {"q": "https://github.com/django/django"},
+            format="json",
+        )
+        assert resp.status_code == 200
+        assert resp.data["full_name"] == "django/django"
+        assert resp.data["language"] == "Python"
+        assert "python" in resp.data["topics"]
+
+    def test_resolve_invalid(self, auth_alice, mock_github):
+        resp = auth_alice.post("/api/v1/github/resolve/", {"q": "nonsense"}, format="json")
+        assert resp.status_code == 400
+
+    def test_repo_detail_endpoint(self, auth_alice, mock_github):
+        resp = auth_alice.get("/api/v1/github/repos/django/django/")
+        assert resp.status_code == 200
+        assert resp.data["full_name"] == "django/django"
+
+    def test_attach_repo_to_post(self, auth_alice, alice, mock_github):
+        resp = auth_alice.post(
+            "/api/v1/posts/",
+            {
+                "caption": "shipping",
+                "image": tiny_image(),
+                "repo_full_name": "django/django",
+            },
+            format="multipart",
+        )
+        assert resp.status_code == 201
+        assert resp.data["repo"]["full_name"] == "django/django"
+        assert Repo.objects.filter(full_name="django/django").exists()
+        assert Post.objects.get(user=alice).repo.full_name == "django/django"
+
+    def test_filter_posts_by_repo(self, auth_alice, alice, bob, mock_github):
+        from core.github import get_or_refresh_repo
+
+        repo = get_or_refresh_repo("django/django")
+        Post.objects.create(user=bob, image=tiny_image(), caption="tagged", repo=repo)
+        Post.objects.create(user=alice, image=tiny_image(), caption="untagged")
+        resp = auth_alice.get("/api/v1/posts/?repo=django/django")
+        captions = {p["caption"] for p in resp.data["results"]}
+        assert captions == {"tagged"}
