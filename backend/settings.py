@@ -169,3 +169,8 @@ CORS_ALLOWED_ORIGINS = env.list(
 
 # Optional GitHub token to raise the public API rate limit for repo enrichment.
 GITHUB_API_TOKEN = env("GITHUB_API_TOKEN", default="")
+
+# Realtime gateway (Rust service). When REALTIME_URL is empty, publishing
+# activity events is a no-op, so the app runs fine without the gateway.
+REALTIME_URL = env("REALTIME_URL", default="")
+REALTIME_INTERNAL_TOKEN = env("REALTIME_INTERNAL_TOKEN", default="")
