@@ -70,3 +70,13 @@ export interface TokenPair {
   access: string;
   refresh: string;
 }
+
+export interface LiveEvent {
+  type: string;
+  actor: string;
+  title?: string;
+  url?: string;
+  repo?: string | null;
+  post_id?: string | null;
+  created_at?: string;
+}
