@@ -1,5 +1,10 @@
 # ThreadSpace
 
+[![CI](https://github.com/mstomar698/threadspace/actions/workflows/ci.yml/badge.svg)](https://github.com/mstomar698/threadspace/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+![Stack](https://img.shields.io/badge/stack-Django%20%C2%B7%20Next.js%20%C2%B7%20Rust-555)
+
 A build-in-public social network for the open-source world. Developers share devlog
 posts that can attach real GitHub artifacts (repos, releases, commits, PRs), follow
 people and projects, and discover what others are shipping.
@@ -7,12 +12,26 @@ people and projects, and discover what others are shipping.
 This started as a first-year Django social-media clone and is being scaled into a
 properly engineered, full-stack project. See [docs/PLAN.md](docs/PLAN.md) for the roadmap.
 
+ThreadSpace is open source under the [MIT License](LICENSE), and contributions are
+welcome — see [Contributing](#contributing).
+
 ## Tech
 
 - Backend: Django 5 + Django REST Framework (JWT, OpenAPI)
 - Frontend: Next.js + TypeScript + Tailwind
 - Realtime/ingestion: Rust gateway (axum + tokio) in [realtime/](realtime/)
 - Data: Postgres (SQLite for local dev), optional Redis for multi-instance fan-out
+
+## Repository layout
+
+| Path        | What it is                                                          |
+| ----------- | ------------------------------------------------------------------- |
+| `core/`     | Django domain models, admin, and legacy template views              |
+| `api/`      | Versioned Django REST Framework API (serializers, views, perms)     |
+| `backend/`  | Django project settings and URL config                              |
+| `frontend/` | Next.js + TypeScript + Tailwind web client                          |
+| `realtime/` | Rust (axum + tokio) webhook ingestion + live-feed WebSocket gateway |
+| `docs/`     | Roadmap and design notes                                            |
 
 ## Run the whole stack with Docker
 
@@ -111,3 +130,17 @@ pytest                # run tests
 ```
 
 Configuration is environment-driven (see `.env.example`). Never commit your `.env`.
+
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for
+setup, the per-service checks to run before opening a PR, and our commit/PR
+conventions. By participating you agree to our
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+- Found a bug or have an idea? Open an [issue](../../issues).
+- Found a security issue? Please report it privately — see [SECURITY.md](SECURITY.md).
+
+## License
+
+Distributed under the [MIT License](LICENSE).
