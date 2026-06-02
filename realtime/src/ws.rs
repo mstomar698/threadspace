@@ -33,7 +33,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, user: Option<String>)
     let mut rx = state.hub.subscribe();
 
     let hello = serde_json::json!({ "type": "connected", "user": user });
-    if sender.send(Message::Text(hello.to_string().into())).await.is_err() {
+    if sender
+        .send(Message::Text(hello.to_string().into()))
+        .await
+        .is_err()
+    {
         return;
     }
 

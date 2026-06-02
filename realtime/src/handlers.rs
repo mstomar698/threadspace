@@ -34,7 +34,9 @@ pub async fn publish(
     Json(req): Json<PublishRequest>,
 ) -> impl IntoResponse {
     if let Some(expected) = &state.config.internal_token {
-        let provided = headers.get("x-internal-token").and_then(|v| v.to_str().ok());
+        let provided = headers
+            .get("x-internal-token")
+            .and_then(|v| v.to_str().ok());
         if provided != Some(expected.as_str()) {
             return (
                 StatusCode::UNAUTHORIZED,
@@ -52,7 +54,11 @@ pub async fn publish(
         event: req.event,
     });
 
-    (StatusCode::ACCEPTED, Json(json!({ "receivers": receivers }))).into_response()
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({ "receivers": receivers })),
+    )
+        .into_response()
 }
 
 /// GitHub webhook receiver. Verifies the signature (when a secret is set),
