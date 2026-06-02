@@ -17,7 +17,11 @@ export function useLiveFeed(
   const [pending, setPending] = useState(0);
   const [connected, setConnected] = useState(false);
   const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
+
+  // Keep the latest callback without re-subscribing the socket.
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  });
 
   useEffect(() => {
     if (!REALTIME_URL || !username) return;
@@ -41,10 +45,11 @@ export function useLiveFeed(
         try {
           const data = JSON.parse(message.data) as LiveEvent;
           if (data.type === "connected") return;
-          // Don't nudge the user about their own posts.
-          if (data.type === "post.created" && data.actor === username) return;
-          setPending((count) => count + 1);
           onEventRef.current?.(data);
+          // Only count events the feed refetch can actually surface (posts),
+          // and never nudge the user about their own posts.
+          if (data.type !== "post.created" || data.actor === username) return;
+          setPending((count) => count + 1);
         } catch {
           /* ignore malformed frames */
         }

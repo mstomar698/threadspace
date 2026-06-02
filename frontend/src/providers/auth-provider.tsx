@@ -46,7 +46,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Bootstrap the session on mount by syncing with external systems (the token
+  // store + the API). setState here is intentional, not derived render state.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadProfile();
   }, [loadProfile]);
 
