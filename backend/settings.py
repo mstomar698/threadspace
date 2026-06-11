@@ -170,6 +170,15 @@ CORS_ALLOWED_ORIGINS = env.list(
 # Optional GitHub token to raise the public API rate limit for repo enrichment.
 GITHUB_API_TOKEN = env("GITHUB_API_TOKEN", default="")
 
+# GitHub OAuth ("Connect GitHub"): credentials from the OAuth App. When unset,
+# the connect endpoints are effectively disabled.
+GITHUB_OAUTH_CLIENT_ID = env("GITHUB_OAUTH_CLIENT_ID", default="")
+GITHUB_OAUTH_CLIENT_SECRET = env("GITHUB_OAUTH_CLIENT_SECRET", default="")
+GITHUB_OAUTH_SCOPES = env("GITHUB_OAUTH_SCOPES", default="read:user,public_repo")
+
+# Public base URL of the frontend, used to build the OAuth redirect URI.
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
+
 # Realtime gateway (Rust service). When REALTIME_URL is empty, publishing
 # activity events is a no-op, so the app runs fine without the gateway.
 REALTIME_URL = env("REALTIME_URL", default="")

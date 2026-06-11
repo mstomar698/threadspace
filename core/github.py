@@ -8,6 +8,7 @@ is optional and only raises the rate limit. Network calls go through
 import json
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import timedelta
 from urllib.parse import urlparse
@@ -19,6 +20,8 @@ from django.utils.dateparse import parse_datetime
 from .models import Repo
 
 GITHUB_API = "https://api.github.com"
+GITHUB_OAUTH_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+GITHUB_OAUTH_TOKEN_URL = "https://github.com/login/oauth/access_token"
 CACHE_TTL = timedelta(hours=1)
 
 _SEGMENT = r"[A-Za-z0-9_.-]+"
@@ -30,6 +33,10 @@ class RepoNotFound(Exception):
 
 
 class RepoFetchError(Exception):
+    pass
+
+
+class OAuthError(Exception):
     pass
 
 
@@ -111,3 +118,86 @@ def get_or_refresh_repo(identifier: str) -> Repo:
 
     data = fetch_repo_metadata(full_name)
     return _apply_metadata(existing or Repo(), data)
+
+
+# --- OAuth ("Connect GitHub") -------------------------------------------------
+
+
+def build_authorize_url(state: str, redirect_uri: str) -> str:
+    """Build the GitHub OAuth authorize URL the user is redirected to."""
+    scopes = (getattr(settings, "GITHUB_OAUTH_SCOPES", "") or "").replace(",", " ").strip()
+    params = {
+        "client_id": settings.GITHUB_OAUTH_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "scope": scopes,
+        "state": state,
+        "allow_signup": "false",
+    }
+    return f"{GITHUB_OAUTH_AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
+
+
+def exchange_oauth_code(code: str, redirect_uri: str) -> dict:
+    """Exchange an OAuth ``code`` for an access token. Mocked in tests."""
+    data = urllib.parse.urlencode(
+        {
+            "client_id": settings.GITHUB_OAUTH_CLIENT_ID,
+            "client_secret": settings.GITHUB_OAUTH_CLIENT_SECRET,
+            "code": code,
+            "redirect_uri": redirect_uri,
+        }
+    ).encode()
+    request = urllib.request.Request(
+        GITHUB_OAUTH_TOKEN_URL,
+        data=data,
+        headers={"Accept": "application/json", "User-Agent": "ThreadSpace"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=8) as resp:
+            payload = json.loads(resp.read().decode())
+    except urllib.error.URLError as exc:
+        raise OAuthError(str(exc)) from exc
+
+    if payload.get("error") or not payload.get("access_token"):
+        raise OAuthError(payload.get("error_description") or "OAuth token exchange failed")
+    return payload
+
+
+def _authed_get(path: str, token: str) -> dict | list:
+    request = urllib.request.Request(
+        f"{GITHUB_API}{path}",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "ThreadSpace",
+            "Authorization": f"Bearer {token}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=8) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            raise OAuthError("GitHub authorization failed or expired.") from exc
+        raise RepoFetchError(f"GitHub returned {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise RepoFetchError(str(exc)) from exc
+
+
+def fetch_authenticated_user(token: str) -> dict:
+    """Fetch the GitHub profile for the token owner. Mocked in tests."""
+    return _authed_get("/user", token)
+
+
+def list_authenticated_repos(token: str) -> list:
+    """List repos owned by the token owner (most recently pushed first)."""
+    return _authed_get("/user/repos?per_page=100&sort=pushed&affiliation=owner", token)
+
+
+def import_user_repos(token: str) -> list[Repo]:
+    """Cache/refresh every repo owned by the token's GitHub user."""
+    repos = []
+    for data in list_authenticated_repos(token):
+        if not data.get("full_name"):
+            continue
+        existing = Repo.objects.filter(full_name__iexact=data["full_name"]).first()
+        repos.append(_apply_metadata(existing or Repo(), data))
+    return repos

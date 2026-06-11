@@ -107,6 +107,22 @@ class Comment(models.Model):
         return f"{self.user.username}: {self.body[:30]}"
 
 
+class GitHubAccount(models.Model):
+    """A ThreadSpace user's linked GitHub account (via OAuth)."""
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="github")
+    github_id = models.BigIntegerField(unique=True)
+    login = models.CharField(max_length=120)
+    avatar_url = models.URLField(blank=True)
+    access_token = models.CharField(max_length=255)
+    scopes = models.CharField(max_length=255, blank=True)
+    connected_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.login} ({self.user})"
+
+
 class Follow(models.Model):
     follower = models.ForeignKey(User, on_delete=models.CASCADE, related_name="following")
     following = models.ForeignKey(User, on_delete=models.CASCADE, related_name="followers")

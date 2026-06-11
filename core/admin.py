@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Comment, Follow, Like, Post, Profile, Repo
+from .models import Comment, Follow, GitHubAccount, Like, Post, Profile, Repo
 
 
 @admin.register(Profile)
@@ -40,3 +40,10 @@ class CommentAdmin(admin.ModelAdmin):
 class RepoAdmin(admin.ModelAdmin):
     list_display = ("full_name", "language", "stargazers_count", "fetched_at")
     search_fields = ("full_name", "description")
+
+
+@admin.register(GitHubAccount)
+class GitHubAccountAdmin(admin.ModelAdmin):
+    list_display = ("login", "user", "connected_at")
+    search_fields = ("login", "user__username")
+    autocomplete_fields = ("user",)
