@@ -1,0 +1,36 @@
+# Reverse proxy for the whole stack on a single domain, with automatic HTTPS
+# (Let's Encrypt). Requires ports 80 + 443 reachable and DOMAIN's DNS pointed
+# at this host. DOMAIN is injected from the environment by docker compose.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Collected Django static files, served straight from the shared volume.
+	handle_path /static/* {
+		root * /srv/static
+		file_server
+	}
+
+	# User-uploaded media (post images), served from the shared volume.
+	handle_path /media/* {
+		root * /srv/media
+		file_server
+	}
+
+	# Django REST API + admin.
+	@backend path /api/* /admin/*
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	# Rust realtime gateway: live-feed WebSocket + GitHub webhook ingestion.
+	@realtime path /ws /webhooks/*
+	handle @realtime {
+		reverse_proxy realtime:8080
+	}
+
+	# Everything else: the Next.js frontend.
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

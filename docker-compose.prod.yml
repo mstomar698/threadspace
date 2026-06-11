@@ -1,0 +1,120 @@
+name: threadspace-prod
+
+# Production stack for a single VM (e.g. Oracle Always Free ARM): Postgres +
+# Redis + Django (gunicorn) + Rust realtime gateway + Next.js, all behind Caddy
+# which terminates TLS. Only Caddy is exposed to the internet (ports 80/443);
+# every other service talks over the private compose network.
+#
+# Configure via .env.production (see .env.production.example). Run with:
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-threadspace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-threadspace}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-threadspace}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  realtime:
+    build: ./realtime
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?set INTERNAL_TOKEN in .env.production}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      REDIS_URL: redis://redis:6379
+      RUST_LOG: info
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  backend:
+    build: .
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn backend.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    environment:
+      DEBUG: "False"
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env.production}
+      ALLOWED_HOSTS: ${DOMAIN:?set DOMAIN in .env.production}
+      CSRF_TRUSTED_ORIGINS: https://${DOMAIN}
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN}
+      DATABASE_URL: postgres://${POSTGRES_USER:-threadspace}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-threadspace}
+      REALTIME_URL: http://realtime:8080
+      REALTIME_INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      GITHUB_API_TOKEN: ${GITHUB_API_TOKEN:-}
+      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
+      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
+      GITHUB_OAUTH_SCOPES: ${GITHUB_OAUTH_SCOPES:-read:user,public_repo}
+      FRONTEND_URL: https://${DOMAIN}
+      USE_MANIFEST_STATIC: "True"
+      SECURE_SSL_REDIRECT: "True"
+      SESSION_COOKIE_SECURE: "True"
+      CSRF_COOKIE_SECURE: "True"
+      SECURE_HSTS_SECONDS: "2592000"
+      SECURE_HSTS_INCLUDE_SUBDOMAINS: "True"
+      SECURE_HSTS_PRELOAD: "True"
+    volumes:
+      - media:/app/media
+      - static:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the client bundle at build time, so they must be the public
+        # URLs. Frontend + API share one domain via Caddy.
+        NEXT_PUBLIC_API_URL: https://${DOMAIN}
+        NEXT_PUBLIC_REALTIME_URL: wss://${DOMAIN}
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - static:/srv/static:ro
+      - media:/srv/media:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+      - realtime
+
+volumes:
+  pgdata:
+  media:
+  static:
+  caddy_data:
+  caddy_config:
