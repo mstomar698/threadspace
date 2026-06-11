@@ -14,6 +14,8 @@ staticfiles/
 
 # Env / secrets
 .env
+.env.production
+!.env.production.example
 
 # Tooling caches
 .pytest_cache/
