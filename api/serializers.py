@@ -7,13 +7,24 @@ from core.github import (
     RepoNotFound,
     get_or_refresh_repo,
 )
-from core.models import Comment, Follow, Like, Post, Profile, Repo
+from core.models import Comment, Follow, GitHubAccount, Like, Post, Profile, Repo
 
 User = get_user_model()
 
 
 class RepoResolveSerializer(serializers.Serializer):
     q = serializers.CharField(help_text="A GitHub repo URL or 'owner/name'.")
+
+
+class GitHubAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GitHubAccount
+        fields = ["login", "avatar_url", "scopes", "connected_at"]
+
+
+class GithubOAuthCallbackSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    state = serializers.CharField()
 
 
 class RepoSerializer(serializers.ModelSerializer):

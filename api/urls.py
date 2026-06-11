@@ -5,6 +5,10 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
     CommentViewSet,
+    GithubAccountView,
+    GithubAuthorizeURLView,
+    GithubImportView,
+    GithubOAuthCallbackView,
     GithubResolveView,
     MeView,
     PostViewSet,
@@ -28,6 +32,14 @@ auth_patterns = [
 github_patterns = [
     path("resolve/", GithubResolveView.as_view(), name="github-resolve"),
     path("repos/<str:owner>/<str:name>/", RepoDetailView.as_view(), name="repo-detail"),
+    path(
+        "oauth/authorize-url/",
+        GithubAuthorizeURLView.as_view(),
+        name="github-authorize-url",
+    ),
+    path("oauth/callback/", GithubOAuthCallbackView.as_view(), name="github-callback"),
+    path("account/", GithubAccountView.as_view(), name="github-account"),
+    path("import/", GithubImportView.as_view(), name="github-import"),
 ]
 
 urlpatterns = [

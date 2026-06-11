@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core import signing
 from django.db.models import Count, Exists, OuterRef, Q
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, mixins, permissions, status, viewsets
@@ -6,13 +7,16 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core import github
 from core.github import RepoFetchError, RepoNotFound, get_or_refresh_repo
-from core.models import Comment, Follow, Like, Post, Profile
+from core.models import Comment, Follow, GitHubAccount, Like, Post, Profile
 
 from .pagination import FeedCursorPagination
 from .permissions import IsOwnerOrReadOnly
 from .serializers import (
     CommentSerializer,
+    GitHubAccountSerializer,
+    GithubOAuthCallbackSerializer,
     PostSerializer,
     ProfileSerializer,
     RegisterSerializer,
@@ -21,6 +25,14 @@ from .serializers import (
 )
 
 User = get_user_model()
+
+GITHUB_OAUTH_SALT = "github-oauth-state"
+
+
+def _oauth_redirect_uri():
+    from django.conf import settings
+
+    return f"{settings.FRONTEND_URL.rstrip('/')}/settings/github/callback"
 
 
 def _resolve_repo_response(identifier):
@@ -60,6 +72,114 @@ class RepoDetailView(APIView):
     @extend_schema(responses=RepoSerializer)
     def get(self, request, owner, name):
         return _resolve_repo_response(f"{owner}/{name}")
+
+
+class GithubAuthorizeURLView(APIView):
+    """Return the GitHub OAuth authorize URL for the current user to visit."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(responses=OpenApiResponse(description="{'authorize_url': str}"))
+    def get(self, request):
+        from django.conf import settings
+
+        if not settings.GITHUB_OAUTH_CLIENT_ID:
+            return Response(
+                {"detail": "GitHub OAuth is not configured."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        state = signing.dumps({"uid": request.user.id}, salt=GITHUB_OAUTH_SALT)
+        url = github.build_authorize_url(state, _oauth_redirect_uri())
+        return Response({"authorize_url": url})
+
+
+class GithubOAuthCallbackView(APIView):
+    """Exchange the OAuth code for a token and link the GitHub account."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(request=GithubOAuthCallbackSerializer, responses=GitHubAccountSerializer)
+    def post(self, request):
+        serializer = GithubOAuthCallbackSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            payload = signing.loads(
+                serializer.validated_data["state"], salt=GITHUB_OAUTH_SALT, max_age=600
+            )
+        except signing.BadSignature:
+            return Response(
+                {"detail": "Invalid or expired OAuth state."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if payload.get("uid") != request.user.id:
+            return Response(
+                {"detail": "OAuth state does not match the current user."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            token_payload = github.exchange_oauth_code(
+                serializer.validated_data["code"], _oauth_redirect_uri()
+            )
+            gh_user = github.fetch_authenticated_user(token_payload["access_token"])
+        except github.OAuthError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        account, _ = GitHubAccount.objects.update_or_create(
+            user=request.user,
+            defaults={
+                "github_id": gh_user["id"],
+                "login": gh_user.get("login", ""),
+                "avatar_url": gh_user.get("avatar_url", "") or "",
+                "access_token": token_payload["access_token"],
+                "scopes": token_payload.get("scope", ""),
+            },
+        )
+        return Response(GitHubAccountSerializer(account).data)
+
+
+class GithubAccountView(APIView):
+    """Read or disconnect the current user's linked GitHub account."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(responses=OpenApiResponse(description="{'connected': bool, ...account}"))
+    def get(self, request):
+        account = GitHubAccount.objects.filter(user=request.user).first()
+        if not account:
+            return Response({"connected": False})
+        return Response({"connected": True, **GitHubAccountSerializer(account).data})
+
+    @extend_schema(responses={204: None})
+    def delete(self, request):
+        GitHubAccount.objects.filter(user=request.user).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class GithubImportView(APIView):
+    """Import (cache/refresh) the connected user's GitHub repositories."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(request=None, responses=RepoSerializer(many=True))
+    def post(self, request):
+        account = GitHubAccount.objects.filter(user=request.user).first()
+        if not account:
+            return Response(
+                {"detail": "Connect your GitHub account first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            repos = github.import_user_repos(account.access_token)
+        except github.OAuthError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except RepoFetchError:
+            return Response(
+                {"detail": "Could not reach GitHub, try again."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response(RepoSerializer(repos, many=True).data)
 
 
 class RegisterView(generics.CreateAPIView):
