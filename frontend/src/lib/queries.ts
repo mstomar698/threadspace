@@ -8,6 +8,7 @@ import { api } from "./api";
 import type {
   Comment,
   CursorPaginated,
+  GitHubAccountStatus,
   Paginated,
   Post,
   Profile,
@@ -21,6 +22,7 @@ export const keys = {
   search: (q: string) => ["search", q] as const,
   repo: (fullName: string) => ["repo", fullName] as const,
   projectPosts: (fullName: string) => ["project-posts", fullName] as const,
+  githubAccount: ["github-account"] as const,
 };
 
 export function useFeed() {
@@ -95,6 +97,47 @@ export function useProjectPosts(fullName: string) {
     queryFn: () =>
       api.get<Paginated<Post>>(`/posts/?repo=${encodeURIComponent(fullName)}`),
     enabled: !!fullName,
+  });
+}
+
+export function useGithubAccount() {
+  return useQuery({
+    queryKey: keys.githubAccount,
+    queryFn: () => api.get<GitHubAccountStatus>("/github/account/"),
+  });
+}
+
+export function useConnectGithub() {
+  return useMutation({
+    mutationFn: async () => {
+      const { authorize_url } = await api.get<{ authorize_url: string }>(
+        "/github/oauth/authorize-url/",
+      );
+      return authorize_url;
+    },
+  });
+}
+
+export function useGithubCallback() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { code: string; state: string }) =>
+      api.post<GitHubAccountStatus>("/github/oauth/callback/", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.githubAccount }),
+  });
+}
+
+export function useImportRepos() {
+  return useMutation({
+    mutationFn: () => api.post<Repo[]>("/github/import/"),
+  });
+}
+
+export function useDisconnectGithub() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete("/github/account/"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.githubAccount }),
   });
 }
 

@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/auth-provider";
-import { Home, LogOut, Search, User } from "lucide-react";
+import { Home, LogOut, Search, Settings, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar } from "./ui/avatar";
@@ -17,6 +17,7 @@ function useNav() {
       label: "Profile",
       icon: User,
     },
+    { href: "/settings", label: "Settings", icon: Settings },
   ];
 }
 

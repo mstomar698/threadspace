@@ -71,6 +71,17 @@ export interface TokenPair {
   refresh: string;
 }
 
+export interface GitHubAccount {
+  login: string;
+  avatar_url: string;
+  scopes: string;
+  connected_at: string;
+}
+
+export interface GitHubAccountStatus extends Partial<GitHubAccount> {
+  connected: boolean;
+}
+
 export interface LiveEvent {
   type: string;
   actor: string;
