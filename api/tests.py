@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from core.models import Comment, Follow, Post, Profile, Repo
+from core.models import Comment, Follow, GitHubAccount, Post, Profile, Repo
 
 User = get_user_model()
 
@@ -271,3 +271,115 @@ class TestGitHub:
         resp = auth_alice.get("/api/v1/posts/?repo=django/django")
         captions = {p["caption"] for p in resp.data["results"]}
         assert captions == {"tagged"}
+
+
+@pytest.fixture
+def oauth_settings(settings):
+    settings.GITHUB_OAUTH_CLIENT_ID = "test-client-id"
+    settings.GITHUB_OAUTH_CLIENT_SECRET = "test-secret"
+    settings.GITHUB_OAUTH_SCOPES = "read:user,public_repo"
+    settings.FRONTEND_URL = "http://localhost:3000"
+    return settings
+
+
+def make_state(user):
+    from django.core import signing
+
+    from api.views import GITHUB_OAUTH_SALT
+
+    return signing.dumps({"uid": user.id}, salt=GITHUB_OAUTH_SALT)
+
+
+class TestGitHubOAuth:
+    def test_authorize_url_requires_auth(self, api, db, oauth_settings):
+        resp = api.get("/api/v1/github/oauth/authorize-url/")
+        assert resp.status_code == 401
+
+    def test_authorize_url(self, auth_alice, oauth_settings):
+        resp = auth_alice.get("/api/v1/github/oauth/authorize-url/")
+        assert resp.status_code == 200
+        url = resp.data["authorize_url"]
+        assert "github.com/login/oauth/authorize" in url
+        assert "client_id=test-client-id" in url
+        assert "state=" in url
+
+    def test_authorize_url_unconfigured(self, auth_alice, settings):
+        settings.GITHUB_OAUTH_CLIENT_ID = ""
+        resp = auth_alice.get("/api/v1/github/oauth/authorize-url/")
+        assert resp.status_code == 503
+
+    def test_callback_links_account(self, auth_alice, alice, oauth_settings, monkeypatch):
+        from core import github
+
+        monkeypatch.setattr(
+            github,
+            "exchange_oauth_code",
+            lambda code, redirect_uri: {"access_token": "gho_x", "scope": "read:user"},
+        )
+        monkeypatch.setattr(
+            github,
+            "fetch_authenticated_user",
+            lambda token: {"id": 4242, "login": "alice-gh", "avatar_url": "https://a/x.png"},
+        )
+        resp = auth_alice.post(
+            "/api/v1/github/oauth/callback/",
+            {"code": "abc", "state": make_state(alice)},
+            format="json",
+        )
+        assert resp.status_code == 200
+        assert resp.data["login"] == "alice-gh"
+        account = GitHubAccount.objects.get(user=alice)
+        assert account.github_id == 4242
+        assert account.access_token == "gho_x"
+
+    def test_callback_rejects_bad_state(self, auth_alice, oauth_settings):
+        resp = auth_alice.post(
+            "/api/v1/github/oauth/callback/",
+            {"code": "abc", "state": "tampered"},
+            format="json",
+        )
+        assert resp.status_code == 400
+
+    def test_callback_rejects_other_users_state(self, auth_alice, bob, oauth_settings):
+        resp = auth_alice.post(
+            "/api/v1/github/oauth/callback/",
+            {"code": "abc", "state": make_state(bob)},
+            format="json",
+        )
+        assert resp.status_code == 400
+
+    def test_account_get_and_disconnect(self, auth_alice, alice, oauth_settings):
+        resp = auth_alice.get("/api/v1/github/account/")
+        assert resp.status_code == 200
+        assert resp.data["connected"] is False
+
+        GitHubAccount.objects.create(
+            user=alice, github_id=1, login="alice-gh", access_token="gho_x"
+        )
+        resp = auth_alice.get("/api/v1/github/account/")
+        assert resp.data["connected"] is True
+        assert resp.data["login"] == "alice-gh"
+
+        resp = auth_alice.delete("/api/v1/github/account/")
+        assert resp.status_code == 204
+        assert not GitHubAccount.objects.filter(user=alice).exists()
+
+    def test_import_requires_connection(self, auth_alice, oauth_settings):
+        resp = auth_alice.post("/api/v1/github/import/")
+        assert resp.status_code == 400
+
+    def test_import_caches_repos(self, auth_alice, alice, oauth_settings, monkeypatch):
+        from core import github
+
+        GitHubAccount.objects.create(
+            user=alice, github_id=1, login="alice-gh", access_token="gho_x"
+        )
+        monkeypatch.setattr(
+            github,
+            "list_authenticated_repos",
+            lambda token: [sample_repo_payload("alice-gh/widget")],
+        )
+        resp = auth_alice.post("/api/v1/github/import/")
+        assert resp.status_code == 200
+        assert resp.data[0]["full_name"] == "alice-gh/widget"
+        assert Repo.objects.filter(full_name="alice-gh/widget").exists()
