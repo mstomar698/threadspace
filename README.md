@@ -121,6 +121,14 @@ When the gateway is running, creating a post fans the event out to the author's
 followers and the feed shows a live "new updates" pill. See
 [realtime/README.md](realtime/README.md) for endpoints and configuration.
 
+## Deployment
+
+A production stack ([`docker-compose.prod.yml`](docker-compose.prod.yml)) runs
+the whole app on a single VM behind Caddy (automatic HTTPS), with auto-deploy on
+push to `main` via the [`Deploy` workflow](.github/workflows/deploy.yml). See
+[docs/DEPLOY.md](docs/DEPLOY.md) for the app runbook and
+[docs/ORACLE_DEPLOY.md](docs/ORACLE_DEPLOY.md) for Oracle VM provisioning.
+
 ## Development
 
 ```bash

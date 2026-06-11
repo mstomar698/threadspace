@@ -128,13 +128,15 @@ steps once review wraps.
 - Run a full `docker compose` build end-to-end (Docker not installed on the dev
   machine yet) and add a prod-like profile (gunicorn + `collectstatic` + service
   healthchecks).
-- GitHub OAuth "Connect GitHub" + repo import (needs an OAuth app / secrets).
 - Persist webhook events to Postgres for a project activity timeline (today they
   are broadcast as live events only); optionally auto-post releases as devlogs.
 - Generate the typed frontend client directly from the OpenAPI schema.
 - Retire the legacy Django templates once the SPA fully replaces them; richer
   profile editing.
-- Deployment to the Oracle Always Free tier (not Railway).
+- Encrypt stored GitHub OAuth access tokens at rest before going wide.
+- Deployment to Oracle Always Free: the prod stack (gunicorn + Caddy auto-HTTPS +
+  GitHub Actions auto-deploy) is ready — see `docs/DEPLOY.md`. Remaining is the
+  manual side: provision the VM, point DuckDNS, and fill `.env.production`.
 
 ## Notes / deferred
 
