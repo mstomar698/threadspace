@@ -2,6 +2,11 @@
 # (Let's Encrypt). Requires ports 80 + 443 reachable and DOMAIN's DNS pointed
 # at this host. DOMAIN is injected from the environment by docker compose.
 
+# Optional extra site blocks dropped in deploy/sites/*.caddy on the host
+# (e.g. a co-located app on its own subdomain). Empty by default; survives git
+# deploys because those files are host-local and untracked.
+import /etc/caddy/sites/*.caddy
+
 {$DOMAIN} {
 	encode zstd gzip
 

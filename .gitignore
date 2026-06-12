@@ -23,3 +23,7 @@ staticfiles/
 
 # Generated artifacts
 schema.yml
+
+# Host-local deploy extras for co-located apps (survive git deploys)
+deploy/sites/*.caddy
+docker-compose.*.local.yml

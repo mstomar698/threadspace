@@ -106,6 +106,8 @@ services:
       DOMAIN: ${DOMAIN}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # extra site configs (e.g. a co-located app); host-local, not in git
+      - ./deploy/sites:/etc/caddy/sites:ro
       - static:/srv/static:ro
       - media:/srv/media:ro
       - caddy_data:/data
