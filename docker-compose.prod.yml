@@ -67,7 +67,10 @@ services:
       GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
       GITHUB_OAUTH_SCOPES: ${GITHUB_OAUTH_SCOPES:-read:user,public_repo}
       FRONTEND_URL: https://${DOMAIN}
-      USE_MANIFEST_STATIC: "True"
+      # Off until the legacy template static is retired: the manifest storage's
+      # collectstatic post-processing hard-fails on legacy CSS that references a
+      # missing image (static/settings/css/settings.css -> settings/images/bg-03.jpg).
+      USE_MANIFEST_STATIC: "False"
       SECURE_SSL_REDIRECT: "True"
       SESSION_COOKIE_SECURE: "True"
       CSRF_COOKIE_SECURE: "True"
