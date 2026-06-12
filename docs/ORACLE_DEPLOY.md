@@ -250,15 +250,31 @@ echo '*/5 * * * * curl -s "https://www.duckdns.org/update?domains=threadspace&to
 
 ## Part 8 — Deploy ThreadSpace
 
-Follow [DEPLOY.md](DEPLOY.md) from **§3 Clone + configure** onward:
+Code is delivered to the VM by **rsync from the GitHub Actions runner** (the
+runner has repo access; the VM needs no GitHub credentials and is **not** a git
+clone). See [DEPLOY.md](DEPLOY.md) for app-level config.
 
-1. Clone repo on the VM
-2. Copy `.env.production.example` → `.env.production`, set `DOMAIN` and secrets
-3. `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`
-4. `createsuperuser`
-5. Update GitHub OAuth callback to `https://<DOMAIN>/settings/github/callback`
-6. Add GitHub Actions secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`,
-   `DEPLOY_PATH`
+**First-time setup on the VM:**
+
+1. Create the deploy dir (e.g. `~/threadspace`); the deploy workflow rsyncs the
+   code into it.
+2. Copy `.env.production.example` → `.env.production`, set `DOMAIN` and secrets.
+   This file is host-local (gitignored) and preserved across deploys.
+3. First bring-up: `./deploy/deploy.sh` (overlay-aware
+   `docker compose ... up -d --build`).
+4. `createsuperuser`.
+5. Update GitHub OAuth callback to `https://<DOMAIN>/settings/github/callback`.
+
+**Enable push-to-deploy:** add the GitHub Actions repository secrets
+`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` (private key for the VM),
+`DEPLOY_PATH` (the deploy dir). Then every push to `main` (or the **Run
+workflow** button) runs `.github/workflows/deploy.yml`: checkout → rsync to the
+VM → `deploy/deploy.sh`.
+
+**Co-locating another app** (e.g. on a second subdomain): drop a Caddy site
+block in `deploy/sites/<app>.caddy` and a compose overlay
+`docker-compose.<app>.local.yml` on the VM — both host-local and auto-picked-up,
+so they survive deploys.
 
 ---
 

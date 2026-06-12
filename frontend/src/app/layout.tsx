@@ -14,9 +14,35 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ThreadSpace - build in public",
+  metadataBase: new URL("https://threadspace.duckdns.org"),
+  title: {
+    default: "ThreadSpace — build in public for the open-source world",
+    template: "%s · ThreadSpace",
+  },
   description:
-    "A social network for the open-source world. Share what you ship, follow makers and projects.",
+    "ThreadSpace is a build-in-public social network for the open-source world. Share devlogs with real GitHub artifacts — repos, releases, commits, PRs — follow makers and projects, and discover what others are shipping.",
+  keywords: [
+    "ThreadSpace",
+    "build in public",
+    "open source",
+    "devlog",
+    "GitHub",
+    "developers",
+    "social network",
+  ],
+  openGraph: {
+    type: "website",
+    siteName: "ThreadSpace",
+    url: "https://threadspace.duckdns.org",
+    title: "ThreadSpace — build in public for the open-source world",
+    description:
+      "Share devlogs with real GitHub artifacts, follow makers and projects, and discover what others are shipping.",
+  },
+  twitter: {
+    card: "summary",
+    title: "ThreadSpace — build in public",
+    description: "A social network for the open-source world.",
+  },
 };
 
 export default function RootLayout({
