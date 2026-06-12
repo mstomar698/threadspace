@@ -1,14 +1,18 @@
 name: Deploy
 
 # Auto-deploy to the production VM on every push to main, and on demand.
-# Builds happen on the server (single-VM docker compose), so this job just
-# triggers a pull + rebuild over SSH.
+# The runner checks out the code (it already has repo access), rsyncs it to the
+# VM, and runs the single-VM docker compose there. The VM needs NO GitHub
+# credentials. Host-local files on the VM are preserved (see the rsync excludes):
+#   .env.production            - real secrets, never in git
+#   deploy/sites/*.caddy       - extra Caddy site blocks for co-located apps
+#   docker-compose.*.local.yml - extra compose overlays for co-located apps
 #
 # Required repository secrets:
 #   DEPLOY_HOST     - VM public IP or hostname
 #   DEPLOY_USER     - SSH user (e.g. ubuntu)
 #   DEPLOY_SSH_KEY  - private key whose public half is in the VM's authorized_keys
-#   DEPLOY_PATH     - absolute path to the checked-out repo on the VM
+#   DEPLOY_PATH     - absolute path to the deploy dir on the VM
 
 on:
   push:
@@ -24,18 +28,28 @@ jobs:
     name: Deploy to VM
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            set -euo pipefail
-            cd "${{ secrets.DEPLOY_PATH }}"
-            git fetch --all
-            git reset --hard origin/main
-            files=(-f docker-compose.prod.yml)
-            for f in docker-compose.*.local.yml; do [ -e "$f" ] && files+=(-f "$f"); done
-            docker compose "${files[@]}" --env-file .env.production up -d --build
-            docker image prune -f
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Rsync code to the VM (preserving host-local files)
+        run: |
+          rsync -az --delete \
+            --exclude='.git' --exclude='node_modules' --exclude='**/target' \
+            --exclude='**/.next' --exclude='frontend/build' \
+            --exclude='.env.production' \
+            --exclude='deploy/sites/*.caddy' \
+            --exclude='docker-compose.*.local.yml' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
+
+      - name: Build + bring up the stack
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd '${{ secrets.DEPLOY_PATH }}' && ./deploy/deploy.sh"
