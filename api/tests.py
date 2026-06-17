@@ -597,3 +597,27 @@ class TestGitHubLogin:
         assert resp.status_code == 200
         assert resp.data[0]["full_name"] == "alice-gh/widget"
         assert Repo.objects.filter(full_name="alice-gh/widget").exists()
+
+
+class TestSeedDemo:
+    def test_seed_demo_is_idempotent_and_logins_work(self, api, db):
+        from django.core.management import call_command
+
+        call_command("seed_demo")
+        first_posts = Post.objects.count()
+        first_users = User.objects.count()
+        assert first_posts > 0
+        assert Repo.objects.count() > 10
+
+        # Re-running must not duplicate rows.
+        call_command("seed_demo")
+        assert Post.objects.count() == first_posts
+        assert User.objects.count() == first_users
+
+        # A demo user can authenticate with the documented password.
+        resp = api.post(
+            "/api/v1/auth/token/",
+            {"username": "ada-rs", "password": "Passw0rd!123"},
+            format="json",
+        )
+        assert resp.status_code == 200
