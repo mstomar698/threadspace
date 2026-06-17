@@ -17,6 +17,7 @@ from .views import (
     ProfileViewSet,
     RegisterView,
     RepoDetailView,
+    RepoListView,
 )
 
 router = DefaultRouter()
@@ -33,6 +34,7 @@ auth_patterns = [
 
 github_patterns = [
     path("resolve/", GithubResolveView.as_view(), name="github-resolve"),
+    path("repos/", RepoListView.as_view(), name="repo-list"),
     path("repos/<str:owner>/<str:name>/", RepoDetailView.as_view(), name="repo-detail"),
     path(
         "oauth/authorize-url/",

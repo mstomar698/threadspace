@@ -92,6 +92,34 @@ export function useRepo(owner: string, name: string) {
   });
 }
 
+/** The current user's imported repositories. */
+export function useMyRepos() {
+  return useQuery({
+    queryKey: ["repos", "mine"],
+    queryFn: () => api.get<Paginated<Repo>>("/github/repos/?mine=1"),
+  });
+}
+
+/** Repositories owned by a given GitHub login (for profile pages). */
+export function useUserRepos(owner: string | null | undefined) {
+  return useQuery({
+    queryKey: ["repos", "owner", owner],
+    queryFn: () =>
+      api.get<Paginated<Repo>>(`/github/repos/?owner=${encodeURIComponent(owner ?? "")}`),
+    enabled: !!owner,
+  });
+}
+
+/** Search across all cached projects. */
+export function useRepoSearch(q: string) {
+  return useQuery({
+    queryKey: ["repos", "search", q],
+    queryFn: () =>
+      api.get<Paginated<Repo>>(`/github/repos/?search=${encodeURIComponent(q)}`),
+    enabled: q.trim().length > 0,
+  });
+}
+
 export function useProjectPosts(fullName: string) {
   return useQuery({
     queryKey: keys.projectPosts(fullName),

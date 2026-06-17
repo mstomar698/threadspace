@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/auth-provider";
-import { Home, LogOut, Search, Settings, User } from "lucide-react";
+import { FolderGit2, Home, LogOut, Search, Settings, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar } from "./ui/avatar";
@@ -12,6 +12,7 @@ function useNav() {
   return [
     { href: "/", label: "Feed", icon: Home },
     { href: "/search", label: "Explore", icon: Search },
+    { href: "/projects", label: "Projects", icon: FolderGit2 },
     {
       href: profile ? `/${profile.username}` : "/",
       label: "Profile",

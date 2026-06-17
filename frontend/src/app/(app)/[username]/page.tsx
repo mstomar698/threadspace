@@ -1,10 +1,16 @@
 "use client";
 
 import { PostCard } from "@/components/post-card";
+import { RepoCard } from "@/components/repo-card";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState, Spinner } from "@/components/ui/card";
-import { useProfile, useProfilePosts, useToggleFollow } from "@/lib/queries";
+import {
+  useProfile,
+  useProfilePosts,
+  useToggleFollow,
+  useUserRepos,
+} from "@/lib/queries";
 import { useAuth } from "@/providers/auth-provider";
 import { MapPin } from "lucide-react";
 import { useParams } from "next/navigation";
@@ -24,6 +30,7 @@ export default function ProfilePage() {
   const { profile: me } = useAuth();
   const { data: profile, isLoading } = useProfile(username);
   const { data: posts } = useProfilePosts(username);
+  const { data: repos } = useUserRepos(profile?.github_login);
   const toggleFollow = useToggleFollow(username);
 
   if (isLoading || !profile) {
@@ -72,13 +79,29 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <div className="space-y-4">
+      {repos && repos.results.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-faint">
+            Projects
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {repos.results.map((repo) => (
+              <RepoCard key={repo.full_name} repo={repo} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-faint">
+          Posts
+        </h2>
         {posts && posts.results.length > 0 ? (
           posts.results.map((post) => <PostCard key={post.id} post={post} />)
         ) : (
           <EmptyState title="No posts yet" />
         )}
-      </div>
+      </section>
     </div>
   );
 }

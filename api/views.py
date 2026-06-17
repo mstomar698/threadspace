@@ -11,7 +11,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from core import github
 from core.github import RepoFetchError, RepoNotFound, get_or_refresh_repo
-from core.models import Comment, Follow, GitHubAccount, Like, Post, Profile
+from core.models import Comment, Follow, GitHubAccount, Like, Post, Profile, Repo
 
 from .pagination import FeedCursorPagination
 from .permissions import IsOwnerOrReadOnly
@@ -115,6 +115,33 @@ class RepoDetailView(APIView):
     @extend_schema(responses=RepoSerializer)
     def get(self, request, owner, name):
         return _resolve_repo_response(f"{owner}/{name}")
+
+
+class RepoListView(generics.ListAPIView):
+    """List cached repositories (projects).
+
+    Filters: ``?owner=<login>`` for a specific GitHub owner, ``?mine=1`` for the
+    current user's imported repos, ``?search=`` to search name/description.
+    """
+
+    serializer_class = RepoSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    search_fields = ["full_name", "name", "description"]
+
+    def get_queryset(self):
+        qs = Repo.objects.all()
+        owner = self.request.query_params.get("owner")
+        if owner:
+            qs = qs.filter(owner_login__iexact=owner)
+        if self.request.query_params.get("mine"):
+            login = None
+            if self.request.user.is_authenticated:
+                account = GitHubAccount.objects.filter(user=self.request.user).first()
+                login = account.login if account else None
+            if not login:
+                return qs.none()
+            qs = qs.filter(owner_login__iexact=login)
+        return qs.order_by("-stargazers_count", "full_name")
 
 
 class GithubAuthorizeURLView(APIView):
@@ -304,7 +331,7 @@ class MeView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        return Profile.objects.select_related("user").get(user=self.request.user)
+        return Profile.objects.select_related("user", "user__github").get(user=self.request.user)
 
 
 class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -315,7 +342,7 @@ class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
 
     def get_queryset(self):
         user = self.request.user
-        qs = Profile.objects.select_related("user").annotate(
+        qs = Profile.objects.select_related("user", "user__github").annotate(
             followers_count=Count("user__followers", distinct=True),
             following_count=Count("user__following", distinct=True),
             posts_count=Count("user__posts", distinct=True),

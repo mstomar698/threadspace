@@ -13,6 +13,7 @@ export interface Profile {
   following_count: number;
   posts_count: number;
   is_following: boolean;
+  github_login: string | null;
   created_at: string;
 }
 

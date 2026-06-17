@@ -272,6 +272,48 @@ class TestGitHub:
         captions = {p["caption"] for p in resp.data["results"]}
         assert captions == {"tagged"}
 
+    def test_repo_list_and_filters(self, auth_alice, mock_github):
+        from core.github import get_or_refresh_repo
+
+        get_or_refresh_repo("django/django")
+        get_or_refresh_repo("pallets/flask")
+
+        listing = auth_alice.get("/api/v1/github/repos/")
+        names = {r["full_name"] for r in listing.data["results"]}
+        assert {"django/django", "pallets/flask"} <= names
+
+        owned = auth_alice.get("/api/v1/github/repos/?owner=pallets")
+        assert {r["full_name"] for r in owned.data["results"]} == {"pallets/flask"}
+
+        searched = auth_alice.get("/api/v1/github/repos/?search=flask")
+        assert {r["full_name"] for r in searched.data["results"]} == {"pallets/flask"}
+
+    def test_repo_list_mine(self, api, db, mock_github):
+        from core.github import get_or_refresh_repo
+
+        get_or_refresh_repo("django/django")  # owner "django"
+        owner = make_user("django")
+        GitHubAccount.objects.create(user=owner, github_id=555, login="django", access_token="t")
+        api.force_authenticate(user=owner)
+        resp = api.get("/api/v1/github/repos/?mine=1")
+        assert {r["full_name"] for r in resp.data["results"]} == {"django/django"}
+
+    def test_repo_list_mine_without_account_is_empty(self, auth_alice, mock_github):
+        from core.github import get_or_refresh_repo
+
+        get_or_refresh_repo("django/django")
+        resp = auth_alice.get("/api/v1/github/repos/?mine=1")
+        assert resp.data["results"] == []
+
+    def test_profile_exposes_github_login(self, auth_alice, alice):
+        GitHubAccount.objects.create(user=alice, github_id=777, login="alice-gh", access_token="t")
+        resp = auth_alice.get("/api/v1/profiles/alice/")
+        assert resp.data["github_login"] == "alice-gh"
+        # Users without a linked account report null.
+        make_user("nogh")
+        resp2 = auth_alice.get("/api/v1/profiles/nogh/")
+        assert resp2.data["github_login"] is None
+
 
 @pytest.fixture
 def oauth_settings(settings):

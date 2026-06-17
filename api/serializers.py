@@ -84,6 +84,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     following_count = serializers.SerializerMethodField()
     posts_count = serializers.SerializerMethodField()
     is_following = serializers.SerializerMethodField()
+    github_login = serializers.SerializerMethodField()
 
     class Meta:
         model = Profile
@@ -96,9 +97,14 @@ class ProfileSerializer(serializers.ModelSerializer):
             "following_count",
             "posts_count",
             "is_following",
+            "github_login",
             "created_at",
         ]
         read_only_fields = ["created_at"]
+
+    def get_github_login(self, obj) -> str | None:
+        account = getattr(obj.user, "github", None)
+        return account.login if account else None
 
     def get_followers_count(self, obj) -> int:
         if hasattr(obj, "followers_count"):
