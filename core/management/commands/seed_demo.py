@@ -22,13 +22,38 @@ from django.utils.dateparse import parse_datetime
 
 from core.models import Comment, Follow, GitHubAccount, Like, Post, Profile, Repo
 
-TINY_PNG = (
-    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
-    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00"
-    b"\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-)
-
 DEMO_PASSWORD = "Passw0rd!123"
+
+# Gradient palettes (start_rgb, end_rgb) for generated banner images, so demo
+# posts have a real, sensibly-sized image instead of a blank placeholder.
+_PALETTES = [
+    ((124, 58, 237), (37, 99, 235)),
+    ((16, 185, 129), (59, 130, 246)),
+    ((244, 63, 94), (251, 146, 60)),
+    ((59, 130, 246), (14, 165, 233)),
+    ((168, 85, 247), (236, 72, 153)),
+    ((34, 197, 94), (132, 204, 22)),
+]
+
+
+def _banner(index: int) -> bytes:
+    """A 1200x600 vertical-gradient PNG (cheap, drawn line by line)."""
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    c1, c2 = _PALETTES[index % len(_PALETTES)]
+    width, height = 1200, 600
+    img = Image.new("RGB", (width, height))
+    draw = ImageDraw.Draw(img)
+    for y in range(height):
+        t = y / height
+        color = tuple(round(c1[k] + (c2[k] - c1[k]) * t) for k in range(3))
+        draw.line([(0, y), (width, y)], fill=color)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
 
 # full_name -> metadata for real, highly-active OSS projects (approx, early 2026).
 REPOS = {
@@ -359,24 +384,27 @@ class Command(BaseCommand):
             )
             users[username] = user
 
-        # 3. Posts (one per entry; guarded by caption to stay idempotent).
+        # 3. Posts (guarded by caption to stay idempotent). The banner image is
+        # (re)generated each run so pre-existing demo posts get the nicer image too.
         posts_by_user = {}
+        banner_index = 0
         for username, (_b, _l, _gh, _owned, posts) in USERS.items():
             user = users[username]
             created = []
             for caption, repo_full_name in posts:
-                existing = Post.objects.filter(user=user, caption=caption).first()
-                if existing:
-                    created.append(existing)
-                    continue
                 repo = (
                     Repo.objects.filter(full_name=repo_full_name).first()
                     if repo_full_name
                     else None
                 )
-                post = Post(user=user, caption=caption, repo=repo)
-                post.image.save("demo.png", ContentFile(TINY_PNG), save=True)
+                post, _ = Post.objects.get_or_create(
+                    user=user, caption=caption, defaults={"repo": repo}
+                )
+                if repo and post.repo_id is None:
+                    post.repo = repo
+                post.image.save("demo.png", ContentFile(_banner(banner_index)), save=True)
                 created.append(post)
+                banner_index += 1
             posts_by_user[username] = created
 
         # 4. Follows.
