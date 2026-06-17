@@ -12,7 +12,15 @@ import { useRef, useState } from "react";
 import { Avatar } from "./ui/avatar";
 import { RepoCard } from "./repo-card";
 
-export function Composer() {
+export function Composer({
+  pinnedRepo,
+  onPosted,
+}: {
+  /** When set, the post is locked to this repo (e.g. on a project page). */
+  pinnedRepo?: Repo;
+  /** Called after a post is created (e.g. to refresh that project's devlogs). */
+  onPosted?: () => void;
+} = {}) {
   const { profile } = useAuth();
   const createPost = useCreatePost();
   const resolveRepo = useResolveRepo();
@@ -22,7 +30,8 @@ export function Composer() {
   const [error, setError] = useState<string | null>(null);
   const [showRepoInput, setShowRepoInput] = useState(false);
   const [repoQuery, setRepoQuery] = useState("");
-  const [repo, setRepo] = useState<Repo | null>(null);
+  const [repo, setRepo] = useState<Repo | null>(pinnedRepo ?? null);
+  const locked = !!pinnedRepo;
   const inputRef = useRef<HTMLInputElement>(null);
 
   function pickFile(f: File | null) {
@@ -57,7 +66,8 @@ export function Composer() {
       await createPost.mutateAsync(form);
       setCaption("");
       pickFile(null);
-      setRepo(null);
+      setRepo(pinnedRepo ?? null);
+      onPosted?.();
     } catch (err) {
       setError(errorMessage(err, "Could not post"));
     }
@@ -73,7 +83,9 @@ export function Composer() {
           <Textarea
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
-            placeholder="What did you ship today?"
+            placeholder={
+              pinnedRepo ? `Share an update on ${pinnedRepo.name}…` : "What did you ship today?"
+            }
             rows={2}
             className="border-0 bg-transparent px-0 focus:ring-0 text-base"
           />
@@ -94,12 +106,14 @@ export function Composer() {
           {repo && (
             <div className="relative mt-2">
               <RepoCard repo={repo} linkToProject={false} />
-              <button
-                onClick={() => setRepo(null)}
-                className="absolute right-2 top-2 rounded-full bg-black/50 p-1 text-white hover:bg-black/70"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+              {!locked && (
+                <button
+                  onClick={() => setRepo(null)}
+                  className="absolute right-2 top-2 rounded-full bg-black/50 p-1 text-white hover:bg-black/70"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           )}
 
@@ -138,14 +152,16 @@ export function Composer() {
                 <ImagePlus className="h-4 w-4" />
                 Image
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowRepoInput((v) => !v)}
-              >
-                <GitBranch className="h-4 w-4" />
-                Repo
-              </Button>
+              {!locked && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowRepoInput((v) => !v)}
+                >
+                  <GitBranch className="h-4 w-4" />
+                  Repo
+                </Button>
+              )}
             </div>
             <Button size="sm" onClick={submit} loading={createPost.isPending}>
               Post

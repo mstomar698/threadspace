@@ -1,8 +1,10 @@
 "use client";
 
+import { Composer } from "@/components/composer";
 import { PostCard } from "@/components/post-card";
 import { EmptyState, Spinner } from "@/components/ui/card";
-import { useProjectPosts, useRepo } from "@/lib/queries";
+import { keys, useProjectPosts, useRepo } from "@/lib/queries";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ExternalLink,
   GitFork,
@@ -14,8 +16,10 @@ import { useParams } from "next/navigation";
 export default function ProjectPage() {
   const params = useParams<{ owner: string; name: string }>();
   const { owner, name } = params;
+  const fullName = `${owner}/${name}`;
+  const qc = useQueryClient();
   const { data: repo, isLoading, isError } = useRepo(owner, name);
-  const { data: posts } = useProjectPosts(`${owner}/${name}`);
+  const { data: posts } = useProjectPosts(fullName);
 
   if (isLoading) {
     return (
@@ -84,6 +88,14 @@ export default function ProjectPage() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-faint">
           Devlogs
         </h2>
+
+        <div className="mb-4">
+          <Composer
+            pinnedRepo={repo}
+            onPosted={() => qc.invalidateQueries({ queryKey: keys.projectPosts(fullName) })}
+          />
+        </div>
+
         <div className="space-y-4">
           {posts && posts.results.length > 0 ? (
             posts.results.map((post) => <PostCard key={post.id} post={post} />)

@@ -27,6 +27,20 @@ test("seeded maker's projects appear on the profile, projects page, and detail",
   await expect(page.getByText(MAKER_POST)).toBeVisible();
 });
 
+test("post a devlog directly from a project page", async ({ page }) => {
+  await login(page, "maker", DEFAULT_PASSWORD);
+  await page.goto("/projects/maker/coolproject");
+  await expect(page.getByRole("heading", { name: "maker/coolproject" })).toBeVisible();
+
+  const caption = `Update from the project page ${Date.now()}`;
+  await page.getByPlaceholder(/Share an update on coolproject/).fill(caption);
+  await page.locator('input[type="file"]').setInputFiles("e2e/fixtures/sample.png");
+  await page.getByRole("button", { name: "Post" }).click();
+
+  // The new devlog appears in the project's Devlogs list.
+  await expect(page.getByText(caption)).toBeVisible();
+});
+
 test("sign in with GitHub (stubbed) then import repositories", async ({ page, request }) => {
   // Obtain a valid signed OAuth state from the API, then drive the callback
   // directly — we can't (and don't need to) round-trip through github.com.
