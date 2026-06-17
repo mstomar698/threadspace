@@ -150,20 +150,18 @@ export function useConnectGithub() {
 /** Start the "Sign in with GitHub" flow (works while logged out). */
 export function useGithubLogin() {
   return useMutation({
-    mutationFn: async () => {
-      const { authorize_url } = await api.get<{ authorize_url: string }>(
+    mutationFn: () =>
+      api.get<{ authorize_url: string; nonce: string }>(
         "/github/oauth/login-url/",
         false,
-      );
-      return authorize_url;
-    },
+      ),
   });
 }
 
-/** Complete GitHub sign-in: exchange the code for ThreadSpace JWT tokens. */
+/** Complete GitHub sign-in: exchange the code (+ nonce) for ThreadSpace JWTs. */
 export function useGithubLoginCallback() {
   return useMutation({
-    mutationFn: (input: { code: string; state: string }) =>
+    mutationFn: (input: { code: string; state: string; nonce: string }) =>
       api.post<GithubLoginResult>("/github/oauth/login/", input, false),
   });
 }

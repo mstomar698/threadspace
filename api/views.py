@@ -1,6 +1,8 @@
+import secrets
+
 from django.contrib.auth import get_user_model
 from django.core import signing
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, mixins, permissions, status, viewsets
@@ -10,6 +12,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from core import github
+from core.constants import is_reserved_username
 from core.github import RepoFetchError, RepoNotFound, get_or_refresh_repo
 from core.models import Comment, Follow, GitHubAccount, Like, Post, Profile, Repo
 
@@ -18,6 +21,7 @@ from .permissions import IsOwnerOrReadOnly
 from .serializers import (
     CommentSerializer,
     GitHubAccountSerializer,
+    GithubLoginCallbackSerializer,
     GithubOAuthCallbackSerializer,
     PostSerializer,
     ProfileSerializer,
@@ -39,22 +43,24 @@ def _oauth_redirect_uri():
 
 
 def _unique_username(base: str) -> str:
-    """Return a username based on ``base`` that no existing user holds."""
+    """Return a username based on ``base`` that is free and not reserved."""
     base = (base or "").strip() or "dev"
     candidate = base
     suffix = 1
-    while User.objects.filter(username__iexact=candidate).exists():
+    while (
+        is_reserved_username(candidate) or User.objects.filter(username__iexact=candidate).exists()
+    ):
         suffix += 1
         candidate = f"{base}-{suffix}"
     return candidate
 
 
-@transaction.atomic
 def _login_or_create_user(gh_user, token_payload):
     """Find the user linked to this GitHub identity, or create one.
 
     Returns ``(user, created)``. New users sign in via GitHub only and get an
-    unusable password until they set one.
+    unusable password until they set one. Retries on the (rare) username race
+    between two simultaneous first-time logins of same-named GitHub users.
     """
     github_id = gh_user["id"]
     defaults = {
@@ -70,12 +76,28 @@ def _login_or_create_user(gh_user, token_payload):
         account.save()
         return account.user, False
 
-    user = User(username=_unique_username(gh_user.get("login")), email=gh_user.get("email") or "")
-    user.set_unusable_password()
-    user.save()
-    Profile.objects.create(user=user)
-    GitHubAccount.objects.create(user=user, github_id=github_id, **defaults)
-    return user, True
+    for _attempt in range(3):
+        try:
+            with transaction.atomic():
+                user = User(
+                    username=_unique_username(gh_user.get("login")),
+                    email=gh_user.get("email") or "",
+                )
+                user.set_unusable_password()
+                user.save()
+                Profile.objects.create(user=user)
+                GitHubAccount.objects.create(user=user, github_id=github_id, **defaults)
+            return user, True
+        except IntegrityError:
+            # Lost a race on username or github_id; re-resolve and retry. If the
+            # github_id now exists, the next loop's account lookup won't run, so
+            # fall through to a final lookup below.
+            existing = (
+                GitHubAccount.objects.filter(github_id=github_id).select_related("user").first()
+            )
+            if existing:
+                return existing.user, False
+    raise IntegrityError("Could not create a unique user for GitHub login")
 
 
 def _resolve_repo_response(identifier):
@@ -214,7 +236,7 @@ class GithubLoginAuthorizeURLView(APIView):
 
     permission_classes = [permissions.AllowAny]
 
-    @extend_schema(responses=OpenApiResponse(description="{'authorize_url': str}"))
+    @extend_schema(responses=OpenApiResponse(description="{'authorize_url': str, 'nonce': str}"))
     def get(self, request):
         from django.conf import settings
 
@@ -223,9 +245,12 @@ class GithubLoginAuthorizeURLView(APIView):
                 {"detail": "GitHub OAuth is not configured."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        state = signing.dumps({"flow": "login"}, salt=GITHUB_LOGIN_SALT)
+        # Bind the OAuth state to a random nonce the SPA stores and must echo back
+        # on the callback — prevents login CSRF / session fixation.
+        nonce = secrets.token_urlsafe(24)
+        state = signing.dumps({"flow": "login", "nonce": nonce}, salt=GITHUB_LOGIN_SALT)
         url = github.build_authorize_url(state, _oauth_redirect_uri(), allow_signup=True)
-        return Response({"authorize_url": url})
+        return Response({"authorize_url": url, "nonce": nonce})
 
 
 class GithubLoginCallbackView(APIView):
@@ -234,13 +259,13 @@ class GithubLoginCallbackView(APIView):
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(
-        request=GithubOAuthCallbackSerializer,
+        request=GithubLoginCallbackSerializer,
         responses=OpenApiResponse(
             description="{'access': str, 'refresh': str, 'username': str, 'created': bool}"
         ),
     )
     def post(self, request):
-        serializer = GithubOAuthCallbackSerializer(data=request.data)
+        serializer = GithubLoginCallbackSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         try:
@@ -252,8 +277,13 @@ class GithubLoginCallbackView(APIView):
                 {"detail": "Invalid or expired OAuth state."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if payload.get("flow") != "login":
+        if payload.get("flow") != "login" or not payload.get("nonce"):
             return Response({"detail": "Invalid OAuth state."}, status=status.HTTP_400_BAD_REQUEST)
+        if not secrets.compare_digest(payload["nonce"], serializer.validated_data["nonce"]):
+            return Response(
+                {"detail": "OAuth state does not match this browser."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             token_payload = github.exchange_oauth_code(
@@ -331,7 +361,13 @@ class MeView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        return Profile.objects.select_related("user", "user__github").get(user=self.request.user)
+        # Most users get a Profile at signup, but a superuser created via
+        # `createsuperuser` / admin has none — create one on first access rather
+        # than 500ing.
+        profile, _ = Profile.objects.select_related("user", "user__github").get_or_create(
+            user=self.request.user
+        )
+        return profile
 
 
 class ProfileViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):

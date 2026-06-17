@@ -120,6 +120,29 @@ class TestAuth:
         assert resp.status_code == 200
         assert resp.data["username"] == "alice"
 
+    def test_me_creates_profile_for_profileless_user(self, api, db):
+        # A user without a Profile (e.g. via createsuperuser) must not 500.
+        user = User.objects.create_user(username="rootish", password="testpass123!")
+        api.force_authenticate(user=user)
+        resp = api.get("/api/v1/auth/me/")
+        assert resp.status_code == 200
+        assert resp.data["username"] == "rootish"
+        assert Profile.objects.filter(user=user).exists()
+
+    def test_register_rejects_reserved_username(self, api, db):
+        resp = api.post(
+            "/api/v1/auth/register/",
+            {
+                "username": "settings",
+                "email": "s@example.com",
+                "password": "Sup3rSecret!",
+                "password2": "Sup3rSecret!",
+            },
+            format="json",
+        )
+        assert resp.status_code == 400
+        assert "username" in resp.data
+
 
 class TestPosts:
     def test_create_post_sets_author(self, auth_alice, alice):
@@ -391,12 +414,19 @@ class TestGitHubOAuth:
         assert resp.status_code == 400
 
 
-def make_login_state():
+LOGIN_NONCE = "test-nonce-123"
+
+
+def make_login_state(nonce=LOGIN_NONCE):
     from django.core import signing
 
     from api.views import GITHUB_LOGIN_SALT
 
-    return signing.dumps({"flow": "login"}, salt=GITHUB_LOGIN_SALT)
+    return signing.dumps({"flow": "login", "nonce": nonce}, salt=GITHUB_LOGIN_SALT)
+
+
+def login_payload(code="abc", state=None, nonce=LOGIN_NONCE):
+    return {"code": code, "state": state or make_login_state(nonce), "nonce": nonce}
 
 
 @pytest.fixture
@@ -438,7 +468,7 @@ class TestGitHubLogin:
     ):
         resp = api.post(
             "/api/v1/github/oauth/login/",
-            {"code": "abc", "state": make_login_state()},
+            login_payload(),
             format="json",
         )
         assert resp.status_code == 200
@@ -458,13 +488,13 @@ class TestGitHubLogin:
     ):
         first = api.post(
             "/api/v1/github/oauth/login/",
-            {"code": "abc", "state": make_login_state()},
+            login_payload(),
             format="json",
         )
         assert first.data["created"] is True
         second = api.post(
             "/api/v1/github/oauth/login/",
-            {"code": "def", "state": make_login_state()},
+            login_payload(code="def"),
             format="json",
         )
         assert second.status_code == 200
@@ -477,25 +507,48 @@ class TestGitHubLogin:
         make_user("octocat")
         resp = api.post(
             "/api/v1/github/oauth/login/",
-            {"code": "abc", "state": make_login_state()},
+            login_payload(),
             format="json",
         )
         assert resp.status_code == 200
         assert resp.data["username"] == "octocat-2"
 
+    def test_unique_username_avoids_reserved(self, db):
+        from api.views import _unique_username
+
+        assert _unique_username("settings") == "settings-2"
+        assert _unique_username("brandnewdev") == "brandnewdev"
+
+    def test_login_url_returns_nonce(self, api, db, oauth_settings):
+        resp = api.get("/api/v1/github/oauth/login-url/")
+        assert resp.data["nonce"]
+        # The nonce is embedded in the signed state too.
+        assert "state=" in resp.data["authorize_url"]
+
     def test_login_rejects_connect_state(self, api, alice, oauth_settings):
-        # A "connect" state must not be usable to sign in.
+        # A "connect" state must not be usable to sign in (different salt).
         resp = api.post(
             "/api/v1/github/oauth/login/",
-            {"code": "abc", "state": make_state(alice)},
+            {"code": "abc", "state": make_state(alice), "nonce": "x"},
             format="json",
         )
         assert resp.status_code == 400
 
+    def test_login_rejects_nonce_mismatch(self, api, db, oauth_settings, mock_github_login):
+        # State minted for one browser cannot be completed with a different
+        # nonce (login CSRF / session-fixation guard).
+        resp = api.post(
+            "/api/v1/github/oauth/login/",
+            {"code": "abc", "state": make_login_state("nonce-A"), "nonce": "nonce-B"},
+            format="json",
+        )
+        assert resp.status_code == 400
+        assert not User.objects.filter(username="octocat").exists()
+
     def test_access_token_is_encrypted_at_rest(self, api, db, oauth_settings, mock_github_login):
         api.post(
             "/api/v1/github/oauth/login/",
-            {"code": "abc", "state": make_login_state()},
+            login_payload(),
             format="json",
         )
         # The raw column value (bypassing the field's decryption) is ciphertext.

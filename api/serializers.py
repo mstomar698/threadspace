@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
+from core.constants import is_reserved_username
 from core.github import (
     RepoFetchError,
     RepoNotFound,
@@ -25,6 +26,14 @@ class GitHubAccountSerializer(serializers.ModelSerializer):
 class GithubOAuthCallbackSerializer(serializers.Serializer):
     code = serializers.CharField()
     state = serializers.CharField()
+
+
+class GithubLoginCallbackSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    state = serializers.CharField()
+    # Echoes the nonce the SPA stored when it started the flow; binds the OAuth
+    # state to the initiating browser to prevent login CSRF / session fixation.
+    nonce = serializers.CharField()
 
 
 class RepoSerializer(serializers.ModelSerializer):
@@ -62,6 +71,11 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "username", "email", "password", "password2"]
+
+    def validate_username(self, value):
+        if is_reserved_username(value):
+            raise serializers.ValidationError("This username is reserved.")
+        return value
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password2"]:

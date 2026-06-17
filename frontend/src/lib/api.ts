@@ -7,6 +7,9 @@ const API_V1 = `${API_BASE}/api/v1`;
 const ACCESS_KEY = "ts_access";
 const REFRESH_KEY = "ts_refresh";
 
+/** sessionStorage key for the GitHub sign-in OAuth nonce (login CSRF guard). */
+export const GITHUB_NONCE_KEY = "ts_gh_nonce";
+
 export const tokenStore = {
   get access() {
     if (typeof window === "undefined") return null;

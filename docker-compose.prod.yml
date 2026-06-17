@@ -63,9 +63,14 @@ services:
       REALTIME_URL: http://realtime:8080
       REALTIME_INTERNAL_TOKEN: ${INTERNAL_TOKEN}
       GITHUB_API_TOKEN: ${GITHUB_API_TOKEN:-}
+      # DEBUG is off here, so settings prefers the *_PROD pair (falling back to
+      # the base names). Forward both so either naming in .env.production works.
       GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
       GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
+      GITHUB_OAUTH_CLIENT_ID_PROD: ${GITHUB_OAUTH_CLIENT_ID_PROD:-}
+      GITHUB_OAUTH_CLIENT_SECRET_PROD: ${GITHUB_OAUTH_CLIENT_SECRET_PROD:-}
       GITHUB_OAUTH_SCOPES: ${GITHUB_OAUTH_SCOPES:-read:user,public_repo}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
       FRONTEND_URL: https://${DOMAIN}
       # Off until the legacy template static is retired: the manifest storage's
       # collectstatic post-processing hard-fails on legacy CSS that references a

@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, Spinner } from "@/components/ui/card";
-import { errorMessage, tokenStore } from "@/lib/api";
+import { errorMessage, GITHUB_NONCE_KEY, tokenStore } from "@/lib/api";
 import { useGithubCallback, useGithubLoginCallback } from "@/lib/queries";
 import { CircleCheck, CircleX } from "lucide-react";
 import Link from "next/link";
@@ -31,10 +31,12 @@ function CallbackInner() {
         { onSuccess: () => window.location.replace("/settings") },
       );
     } else {
+      const nonce = sessionStorage.getItem(GITHUB_NONCE_KEY) ?? "";
       signIn.mutate(
-        { code, state },
+        { code, state, nonce },
         {
           onSuccess: (result) => {
+            sessionStorage.removeItem(GITHUB_NONCE_KEY);
             tokenStore.set(result);
             window.location.replace("/");
           },

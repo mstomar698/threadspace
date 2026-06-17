@@ -32,10 +32,17 @@ test("sign in with GitHub (stubbed) then import repositories", async ({ page, re
   // directly — we can't (and don't need to) round-trip through github.com.
   const res = await request.get(`${API_URL}/api/v1/github/oauth/login-url/`);
   expect(res.ok()).toBeTruthy();
-  const { authorize_url } = await res.json();
+  const { authorize_url, nonce } = await res.json();
   const state = new URL(authorize_url).searchParams.get("state");
   expect(state).toBeTruthy();
+  expect(nonce).toBeTruthy();
 
+  // The SPA stores the nonce in sessionStorage before redirecting to GitHub;
+  // seed it so the callback echoes it back (login CSRF guard).
+  await page.addInitScript(
+    ([key, value]) => sessionStorage.setItem(key, value),
+    ["ts_gh_nonce", nonce as string],
+  );
   await page.goto(`/github/callback?code=stub-code&state=${encodeURIComponent(state!)}`);
 
   // The stub creates and signs in "octocat", landing on the feed.

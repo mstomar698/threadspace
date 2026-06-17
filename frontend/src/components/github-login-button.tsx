@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { errorMessage } from "@/lib/api";
+import { errorMessage, GITHUB_NONCE_KEY } from "@/lib/api";
 import { useGithubLogin } from "@/lib/queries";
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
@@ -14,8 +14,11 @@ export function GithubLoginButton({ label }: { label: string }) {
   const start = () => {
     setError(null);
     login.mutate(undefined, {
-      onSuccess: (url) => {
-        window.location.href = url;
+      onSuccess: ({ authorize_url, nonce }) => {
+        // Stored here and echoed back on the callback to bind the OAuth state
+        // to this browser (login CSRF guard).
+        sessionStorage.setItem(GITHUB_NONCE_KEY, nonce);
+        window.location.href = authorize_url;
       },
       onError: (err) =>
         setError(errorMessage(err, "GitHub sign-in is unavailable right now.")),
