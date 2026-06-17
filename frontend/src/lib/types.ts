@@ -82,6 +82,13 @@ export interface GitHubAccountStatus extends Partial<GitHubAccount> {
   connected: boolean;
 }
 
+export interface GithubLoginResult {
+  access: string;
+  refresh: string;
+  username: string;
+  created: boolean;
+}
+
 export interface LiveEvent {
   type: string;
   actor: string;

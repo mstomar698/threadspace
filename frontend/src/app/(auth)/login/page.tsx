@@ -1,5 +1,6 @@
 "use client";
 
+import { GithubLoginButton } from "@/components/github-login-button";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { errorMessage } from "@/lib/api";
@@ -38,6 +39,14 @@ export default function LoginPage() {
         </span>
         <h1 className="text-xl font-semibold">Welcome back</h1>
         <p className="text-sm text-muted">Sign in to ThreadSpace</p>
+      </div>
+
+      <GithubLoginButton label="Continue with GitHub" />
+
+      <div className="my-5 flex items-center gap-3 text-xs text-muted">
+        <span className="h-px flex-1 bg-border-strong" />
+        or
+        <span className="h-px flex-1 bg-border-strong" />
       </div>
 
       <form onSubmit={onSubmit} className="space-y-4">

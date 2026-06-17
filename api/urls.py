@@ -8,6 +8,8 @@ from .views import (
     GithubAccountView,
     GithubAuthorizeURLView,
     GithubImportView,
+    GithubLoginAuthorizeURLView,
+    GithubLoginCallbackView,
     GithubOAuthCallbackView,
     GithubResolveView,
     MeView,
@@ -38,6 +40,12 @@ github_patterns = [
         name="github-authorize-url",
     ),
     path("oauth/callback/", GithubOAuthCallbackView.as_view(), name="github-callback"),
+    path(
+        "oauth/login-url/",
+        GithubLoginAuthorizeURLView.as_view(),
+        name="github-login-url",
+    ),
+    path("oauth/login/", GithubLoginCallbackView.as_view(), name="github-login"),
     path("account/", GithubAccountView.as_view(), name="github-account"),
     path("import/", GithubImportView.as_view(), name="github-import"),
 ]

@@ -3,6 +3,8 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+from .fields import EncryptedCharField
+
 User = settings.AUTH_USER_MODEL
 
 
@@ -114,7 +116,7 @@ class GitHubAccount(models.Model):
     github_id = models.BigIntegerField(unique=True)
     login = models.CharField(max_length=120)
     avatar_url = models.URLField(blank=True)
-    access_token = models.CharField(max_length=255)
+    access_token = EncryptedCharField(max_length=500)
     scopes = models.CharField(max_length=255, blank=True)
     connected_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

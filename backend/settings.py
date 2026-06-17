@@ -167,13 +167,27 @@ CORS_ALLOWED_ORIGINS = env.list(
     "CORS_ALLOWED_ORIGINS", default=["http://localhost:3000", "http://127.0.0.1:3000"]
 )
 
+# Key for encrypting secrets at rest (e.g. stored GitHub OAuth tokens). When
+# unset, a key is derived from SECRET_KEY. In production, set a dedicated
+# Fernet key: `python -c "from cryptography.fernet import Fernet;
+# print(Fernet.generate_key().decode())"`.
+FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default="")
+
 # Optional GitHub token to raise the public API rate limit for repo enrichment.
 GITHUB_API_TOKEN = env("GITHUB_API_TOKEN", default="")
 
-# GitHub OAuth ("Connect GitHub"): credentials from the OAuth App. When unset,
-# the connect endpoints are effectively disabled.
+# GitHub OAuth (sign in with GitHub + "Connect GitHub"). Credentials come from a
+# GitHub OAuth App whose callback is <FRONTEND_URL>/github/callback. Use separate
+# apps for local and production (each has its own registered callback URL): the
+# *_PROD pair is used when DEBUG is off, otherwise the local pair. Either may be
+# omitted, which disables the GitHub endpoints. When unset, the endpoints 503.
 GITHUB_OAUTH_CLIENT_ID = env("GITHUB_OAUTH_CLIENT_ID", default="")
 GITHUB_OAUTH_CLIENT_SECRET = env("GITHUB_OAUTH_CLIENT_SECRET", default="")
+if not DEBUG:
+    GITHUB_OAUTH_CLIENT_ID = env("GITHUB_OAUTH_CLIENT_ID_PROD", default=GITHUB_OAUTH_CLIENT_ID)
+    GITHUB_OAUTH_CLIENT_SECRET = env(
+        "GITHUB_OAUTH_CLIENT_SECRET_PROD", default=GITHUB_OAUTH_CLIENT_SECRET
+    )
 GITHUB_OAUTH_SCOPES = env("GITHUB_OAUTH_SCOPES", default="read:user,public_repo")
 
 # Public base URL of the frontend, used to build the OAuth redirect URI.

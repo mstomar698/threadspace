@@ -1,11 +1,13 @@
 from django.contrib.auth import get_user_model
 from django.core import signing
+from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from core import github
 from core.github import RepoFetchError, RepoNotFound, get_or_refresh_repo
@@ -27,12 +29,53 @@ from .serializers import (
 User = get_user_model()
 
 GITHUB_OAUTH_SALT = "github-oauth-state"
+GITHUB_LOGIN_SALT = "github-oauth-login"
 
 
 def _oauth_redirect_uri():
     from django.conf import settings
 
-    return f"{settings.FRONTEND_URL.rstrip('/')}/settings/github/callback"
+    return f"{settings.FRONTEND_URL.rstrip('/')}/github/callback"
+
+
+def _unique_username(base: str) -> str:
+    """Return a username based on ``base`` that no existing user holds."""
+    base = (base or "").strip() or "dev"
+    candidate = base
+    suffix = 1
+    while User.objects.filter(username__iexact=candidate).exists():
+        suffix += 1
+        candidate = f"{base}-{suffix}"
+    return candidate
+
+
+@transaction.atomic
+def _login_or_create_user(gh_user, token_payload):
+    """Find the user linked to this GitHub identity, or create one.
+
+    Returns ``(user, created)``. New users sign in via GitHub only and get an
+    unusable password until they set one.
+    """
+    github_id = gh_user["id"]
+    defaults = {
+        "login": gh_user.get("login", ""),
+        "avatar_url": gh_user.get("avatar_url", "") or "",
+        "access_token": token_payload["access_token"],
+        "scopes": token_payload.get("scope", ""),
+    }
+    account = GitHubAccount.objects.filter(github_id=github_id).select_related("user").first()
+    if account:
+        for key, value in defaults.items():
+            setattr(account, key, value)
+        account.save()
+        return account.user, False
+
+    user = User(username=_unique_username(gh_user.get("login")), email=gh_user.get("email") or "")
+    user.set_unusable_password()
+    user.save()
+    Profile.objects.create(user=user)
+    GitHubAccount.objects.create(user=user, github_id=github_id, **defaults)
+    return user, True
 
 
 def _resolve_repo_response(identifier):
@@ -137,6 +180,72 @@ class GithubOAuthCallbackView(APIView):
             },
         )
         return Response(GitHubAccountSerializer(account).data)
+
+
+class GithubLoginAuthorizeURLView(APIView):
+    """Return the GitHub OAuth authorize URL for signing in or signing up."""
+
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(responses=OpenApiResponse(description="{'authorize_url': str}"))
+    def get(self, request):
+        from django.conf import settings
+
+        if not settings.GITHUB_OAUTH_CLIENT_ID:
+            return Response(
+                {"detail": "GitHub OAuth is not configured."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        state = signing.dumps({"flow": "login"}, salt=GITHUB_LOGIN_SALT)
+        url = github.build_authorize_url(state, _oauth_redirect_uri(), allow_signup=True)
+        return Response({"authorize_url": url})
+
+
+class GithubLoginCallbackView(APIView):
+    """Sign a user in via GitHub, creating their account on first sign-in."""
+
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        request=GithubOAuthCallbackSerializer,
+        responses=OpenApiResponse(
+            description="{'access': str, 'refresh': str, 'username': str, 'created': bool}"
+        ),
+    )
+    def post(self, request):
+        serializer = GithubOAuthCallbackSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            payload = signing.loads(
+                serializer.validated_data["state"], salt=GITHUB_LOGIN_SALT, max_age=600
+            )
+        except signing.BadSignature:
+            return Response(
+                {"detail": "Invalid or expired OAuth state."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if payload.get("flow") != "login":
+            return Response({"detail": "Invalid OAuth state."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            token_payload = github.exchange_oauth_code(
+                serializer.validated_data["code"], _oauth_redirect_uri()
+            )
+            gh_user = github.fetch_authenticated_user(token_payload["access_token"])
+        except github.OAuthError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        user, created = _login_or_create_user(gh_user, token_payload)
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "username": user.username,
+                "created": created,
+            }
+        )
 
 
 class GithubAccountView(APIView):

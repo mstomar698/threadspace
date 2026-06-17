@@ -123,15 +123,19 @@ def get_or_refresh_repo(identifier: str) -> Repo:
 # --- OAuth ("Connect GitHub") -------------------------------------------------
 
 
-def build_authorize_url(state: str, redirect_uri: str) -> str:
-    """Build the GitHub OAuth authorize URL the user is redirected to."""
+def build_authorize_url(state: str, redirect_uri: str, allow_signup: bool = False) -> str:
+    """Build the GitHub OAuth authorize URL the user is redirected to.
+
+    ``allow_signup`` controls whether GitHub offers a "create an account" option
+    on its login screen — enabled for the sign-in flow, off for linking.
+    """
     scopes = (getattr(settings, "GITHUB_OAUTH_SCOPES", "") or "").replace(",", " ").strip()
     params = {
         "client_id": settings.GITHUB_OAUTH_CLIENT_ID,
         "redirect_uri": redirect_uri,
         "scope": scopes,
         "state": state,
-        "allow_signup": "false",
+        "allow_signup": "true" if allow_signup else "false",
     }
     return f"{GITHUB_OAUTH_AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
 

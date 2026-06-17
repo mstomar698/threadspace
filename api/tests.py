@@ -348,6 +348,125 @@ class TestGitHubOAuth:
         )
         assert resp.status_code == 400
 
+
+def make_login_state():
+    from django.core import signing
+
+    from api.views import GITHUB_LOGIN_SALT
+
+    return signing.dumps({"flow": "login"}, salt=GITHUB_LOGIN_SALT)
+
+
+@pytest.fixture
+def mock_github_login(monkeypatch):
+    from core import github
+
+    monkeypatch.setattr(
+        github,
+        "exchange_oauth_code",
+        lambda code, redirect_uri: {"access_token": "gho_login", "scope": "read:user"},
+    )
+    monkeypatch.setattr(
+        github,
+        "fetch_authenticated_user",
+        lambda token: {
+            "id": 9090,
+            "login": "octocat",
+            "avatar_url": "https://a/o.png",
+            "email": "octocat@example.com",
+        },
+    )
+
+
+class TestGitHubLogin:
+    def test_login_url_is_public(self, api, db, oauth_settings):
+        resp = api.get("/api/v1/github/oauth/login-url/")
+        assert resp.status_code == 200
+        url = resp.data["authorize_url"]
+        assert "github.com/login/oauth/authorize" in url
+        assert "allow_signup=true" in url
+
+    def test_login_url_unconfigured(self, api, db, settings):
+        settings.GITHUB_OAUTH_CLIENT_ID = ""
+        resp = api.get("/api/v1/github/oauth/login-url/")
+        assert resp.status_code == 503
+
+    def test_login_creates_user_and_returns_tokens(
+        self, api, db, oauth_settings, mock_github_login
+    ):
+        resp = api.post(
+            "/api/v1/github/oauth/login/",
+            {"code": "abc", "state": make_login_state()},
+            format="json",
+        )
+        assert resp.status_code == 200
+        assert resp.data["created"] is True
+        assert resp.data["username"] == "octocat"
+        assert resp.data["access"] and resp.data["refresh"]
+        user = User.objects.get(username="octocat")
+        assert user.has_usable_password() is False
+        assert Profile.objects.filter(user=user).exists()
+        account = GitHubAccount.objects.get(user=user)
+        assert account.github_id == 9090
+        # Stored token decrypts back to the original value.
+        assert account.access_token == "gho_login"
+
+    def test_login_existing_account_signs_in_without_duplicate(
+        self, api, db, oauth_settings, mock_github_login
+    ):
+        first = api.post(
+            "/api/v1/github/oauth/login/",
+            {"code": "abc", "state": make_login_state()},
+            format="json",
+        )
+        assert first.data["created"] is True
+        second = api.post(
+            "/api/v1/github/oauth/login/",
+            {"code": "def", "state": make_login_state()},
+            format="json",
+        )
+        assert second.status_code == 200
+        assert second.data["created"] is False
+        assert User.objects.filter(username__startswith="octocat").count() == 1
+
+    def test_login_username_collision_gets_suffixed(
+        self, api, db, oauth_settings, mock_github_login
+    ):
+        make_user("octocat")
+        resp = api.post(
+            "/api/v1/github/oauth/login/",
+            {"code": "abc", "state": make_login_state()},
+            format="json",
+        )
+        assert resp.status_code == 200
+        assert resp.data["username"] == "octocat-2"
+
+    def test_login_rejects_connect_state(self, api, alice, oauth_settings):
+        # A "connect" state must not be usable to sign in.
+        resp = api.post(
+            "/api/v1/github/oauth/login/",
+            {"code": "abc", "state": make_state(alice)},
+            format="json",
+        )
+        assert resp.status_code == 400
+
+    def test_access_token_is_encrypted_at_rest(self, api, db, oauth_settings, mock_github_login):
+        api.post(
+            "/api/v1/github/oauth/login/",
+            {"code": "abc", "state": make_login_state()},
+            format="json",
+        )
+        # The raw column value (bypassing the field's decryption) is ciphertext.
+        from django.db import connection
+
+        with connection.cursor() as cur:
+            cur.execute("SELECT access_token FROM core_githubaccount WHERE github_id = %s", [9090])
+            raw = cur.fetchone()[0]
+        assert raw != "gho_login"
+        from core.encryption import decrypt
+
+        assert decrypt(raw) == "gho_login"
+
     def test_account_get_and_disconnect(self, auth_alice, alice, oauth_settings):
         resp = auth_alice.get("/api/v1/github/account/")
         assert resp.status_code == 200

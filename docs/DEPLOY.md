@@ -87,7 +87,10 @@ In your OAuth App (<https://github.com/settings/developers>) either reuse the
 existing app or create a prod one, and set:
 
 - **Homepage URL**: `https://<DOMAIN>`
-- **Authorization callback URL**: `https://<DOMAIN>/settings/github/callback`
+- **Authorization callback URL**: `https://<DOMAIN>/github/callback`
+
+This single callback URL serves both "Sign in with GitHub" (from the login and
+register pages) and "Connect GitHub" (from Settings).
 
 Put the client ID/secret in `.env.production` and redeploy.
 
