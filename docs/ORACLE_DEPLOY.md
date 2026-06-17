@@ -150,9 +150,7 @@ oci compute image list --compartment-id <TENANCY_OCID> `
 ```
 
 Create VCN, internet gateway, routes, security list (22/80/443), subnet, then
-launch the instance. A full provisioning script lives in the repo at
-[`deploy/oci-provision.ps1`](../deploy/oci-provision.ps1) (adjust OCIDs for
-your tenancy).
+launch the instance (adjust OCIDs for your tenancy).
 
 Launch example (fill in OCIDs):
 
@@ -197,13 +195,10 @@ Always Free **A1** hosts are heavily contended. Common errors:
    available immediately; trial accounts get lowest priority.
 5. Try off-peak hours or a less busy home region (only if you can sign up there).
 
-Persistent retry script (run locally, leave open):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File $HOME\threadspace-launch-retry.ps1
-```
-
-When it prints `PUBLIC_IP = ...`, continue to Part 6.
+A simple approach: leave a gentle launch loop running locally that retries the
+`oci compute instance launch` from Part 4 every ~5 minutes, cycling fault
+domains, until it returns a `RUNNING` instance. When you have the public IP,
+continue to Part 6.
 
 ---
 
@@ -263,7 +258,7 @@ clone). See [DEPLOY.md](DEPLOY.md) for app-level config.
 3. First bring-up: `./deploy/deploy.sh` (overlay-aware
    `docker compose ... up -d --build`).
 4. `createsuperuser`.
-5. Update GitHub OAuth callback to `https://<DOMAIN>/settings/github/callback`.
+5. Update GitHub OAuth callback to `https://<DOMAIN>/github/callback`.
 
 **Enable push-to-deploy:** add the GitHub Actions repository secrets
 `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` (private key for the VM),
@@ -295,19 +290,12 @@ so they survive deploys.
 
 ---
 
-## Current session notes (Mumbai tenancy)
+## Current status
 
-Networking was partially provisioned via CLI before A1 capacity blocked the
-instance launch:
-
-- VCN `threadspace-vcn` (`10.0.0.0/16`)
-- Public subnet `threadspace-subnet` (`10.0.1.0/24`)
-- Internet gateway + default route
-- Security list: ingress TCP 22, 80, 443
-
-**Still needed:** launch the A1 instance into the existing subnet (or recreate
-via Console wizard if you prefer a clean slate). Use the retry script in Part 5
-once the rate-limit cooldown has passed.
+ThreadSpace is **deployed and live** on an Oracle Always Free A1 VM, with
+push-to-deploy wired up via `.github/workflows/deploy.yml` (rsync from the
+runner → `deploy/deploy.sh` on the VM). The sections above are kept as a
+reproducible runbook for rebuilding the VM from scratch.
 
 ---
 
