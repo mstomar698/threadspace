@@ -40,6 +40,31 @@ class OAuthError(Exception):
     pass
 
 
+def _stub_enabled() -> bool:
+    return bool(getattr(settings, "GITHUB_STUB", False))
+
+
+def _stub_repo(full_name: str) -> dict:
+    owner, _, name = full_name.partition("/")
+    return {
+        "full_name": full_name,
+        "name": name or full_name,
+        "owner": {"login": owner, "avatar_url": "https://avatars.example/u.png"},
+        "html_url": f"https://github.com/{full_name}",
+        "description": f"Stubbed metadata for {full_name}.",
+        "homepage": "",
+        "language": "Python",
+        "topics": ["stub", "e2e"],
+        "stargazers_count": 42,
+        "forks_count": 7,
+        "open_issues_count": 3,
+        "pushed_at": "2026-01-01T00:00:00Z",
+    }
+
+
+STUB_LOGIN = "octocat"
+
+
 def parse_repo_identifier(value: str) -> str:
     """Normalise a GitHub URL or ``owner/name`` string to ``owner/name``."""
     value = (value or "").strip()
@@ -67,6 +92,8 @@ def parse_repo_identifier(value: str) -> str:
 
 def fetch_repo_metadata(full_name: str) -> dict:
     """Fetch repository metadata from the GitHub API. Mocked in tests."""
+    if _stub_enabled():
+        return _stub_repo(full_name)
     request = urllib.request.Request(
         f"{GITHUB_API}/repos/{full_name}",
         headers={
@@ -142,6 +169,8 @@ def build_authorize_url(state: str, redirect_uri: str, allow_signup: bool = Fals
 
 def exchange_oauth_code(code: str, redirect_uri: str) -> dict:
     """Exchange an OAuth ``code`` for an access token. Mocked in tests."""
+    if _stub_enabled():
+        return {"access_token": "stub-access-token", "scope": "read:user,public_repo"}
     data = urllib.parse.urlencode(
         {
             "client_id": settings.GITHUB_OAUTH_CLIENT_ID,
@@ -188,11 +217,24 @@ def _authed_get(path: str, token: str) -> dict | list:
 
 def fetch_authenticated_user(token: str) -> dict:
     """Fetch the GitHub profile for the token owner. Mocked in tests."""
+    if _stub_enabled():
+        return {
+            "id": 100001,
+            "login": STUB_LOGIN,
+            "avatar_url": "https://avatars.example/octocat.png",
+            "email": "octocat@example.com",
+        }
     return _authed_get("/user", token)
 
 
 def list_authenticated_repos(token: str) -> list:
     """List repos owned by the token owner (most recently pushed first)."""
+    if _stub_enabled():
+        return [
+            _stub_repo(f"{STUB_LOGIN}/hello-world"),
+            _stub_repo(f"{STUB_LOGIN}/threadspace"),
+            _stub_repo(f"{STUB_LOGIN}/dotfiles"),
+        ]
     return _authed_get("/user/repos?per_page=100&sort=pushed&affiliation=owner", token)
 
 

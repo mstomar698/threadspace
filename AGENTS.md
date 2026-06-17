@@ -43,6 +43,13 @@ The `threadspace-checks` skill has the full matrix and commands.
 
 If you touch models: `python manage.py makemigrations --check --dry-run`.
 
+**End-to-end** (real-stack Playwright, in `frontend/`): `npm run e2e:install` once,
+then `npm run e2e`. The config boots the real Django backend (fresh sqlite,
+seeded via `manage.py seed_e2e`, `GITHUB_STUB=1` so github.com is never called)
+plus a production Next build, and drives Chromium against both. It uses a prod
+build, not `next dev` — Turbopack dev hangs the client auth bootstrap under
+headless Chromium. Specs live in `frontend/e2e/`.
+
 ## Gotchas
 
 - **Tests run with `DEBUG=False`**: security hardening (SSL redirect, HSTS,

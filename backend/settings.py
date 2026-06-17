@@ -176,6 +176,11 @@ FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default="")
 # Optional GitHub token to raise the public API rate limit for repo enrichment.
 GITHUB_API_TOKEN = env("GITHUB_API_TOKEN", default="")
 
+# Test-only: when enabled, the GitHub network helpers return canned data instead
+# of calling github.com. Used by the Playwright e2e stack so the real backend
+# runs end-to-end without external dependencies. NEVER enable in production.
+GITHUB_STUB = env.bool("GITHUB_STUB", default=False)
+
 # GitHub OAuth (sign in with GitHub + "Connect GitHub"). Credentials come from a
 # GitHub OAuth App whose callback is <FRONTEND_URL>/github/callback. Use separate
 # apps for local and production (each has its own registered callback URL): the

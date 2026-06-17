@@ -21,6 +21,13 @@ staticfiles/
 .pytest_cache/
 .ruff_cache/
 
+# e2e (Playwright)
+e2e.sqlite3
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/node_modules/.cache/
+
 # Generated artifacts
 schema.yml
 
