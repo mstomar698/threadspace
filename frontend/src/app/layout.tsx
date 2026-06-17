@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://threadspace.duckdns.org"),
+  applicationName: "ThreadSpace",
   title: {
     default: "ThreadSpace — build in public for the open-source world",
     template: "%s · ThreadSpace",
@@ -30,6 +31,14 @@ export const metadata: Metadata = {
     "developers",
     "social network",
   ],
+  authors: [{ name: "ThreadSpace" }],
+  creator: "ThreadSpace",
+  alternates: { canonical: "/" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large" },
+  },
   openGraph: {
     type: "website",
     siteName: "ThreadSpace",
@@ -39,7 +48,7 @@ export const metadata: Metadata = {
       "Share devlogs with real GitHub artifacts, follow makers and projects, and discover what others are shipping.",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "ThreadSpace — build in public",
     description: "A social network for the open-source world.",
   },

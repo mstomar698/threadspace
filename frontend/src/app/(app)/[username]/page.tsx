@@ -27,7 +27,7 @@ function Stat({ value, label }: { value: number; label: string }) {
 export default function ProfilePage() {
   const params = useParams<{ username: string }>();
   const username = params.username;
-  const { profile: me } = useAuth();
+  const { profile: me, refresh } = useAuth();
   const { data: profile, isLoading } = useProfile(username);
   const { data: posts } = useProfilePosts(username);
   const { data: repos } = useUserRepos(profile?.github_login);
@@ -55,7 +55,9 @@ export default function ProfilePage() {
             {!isSelf && (
               <Button
                 variant={profile.is_following ? "secondary" : "primary"}
-                onClick={() => toggleFollow.mutate()}
+                onClick={() =>
+                  toggleFollow.mutate(undefined, { onSuccess: () => refresh() })
+                }
                 loading={toggleFollow.isPending}
               >
                 {profile.is_following ? "Following" : "Follow"}

@@ -80,7 +80,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{profile.username}</p>
               <p className="truncate text-xs text-faint">
-                {profile.followers_count} followers
+                {profile.following_count} following · {profile.followers_count} followers
               </p>
             </div>
             <button

@@ -10,8 +10,9 @@ test("register, then log out and log back in", async ({ page }) => {
   const username = uniqueName("authuser");
   await register(page, username);
 
-  // New accounts land on an empty feed.
-  await expect(page.getByText("Your feed is quiet")).toBeVisible();
+  // New accounts (following nobody) land on the discovery feed, which shows the
+  // seeded maker's post rather than an empty state.
+  await expect(page.getByText("Shipped the first cut of coolproject 🚀")).toBeVisible();
 
   // Log out (sidebar button has a "Log out" title).
   await page.getByRole("button", { name: "Log out" }).click();
