@@ -28,7 +28,9 @@ export default function FeedPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Feed</h1>
-        <p className="text-sm text-muted">Latest from people you follow.</p>
+        <p className="text-sm text-muted">
+          Latest from people you follow — and fresh builds to discover.
+        </p>
       </div>
 
       <Composer />

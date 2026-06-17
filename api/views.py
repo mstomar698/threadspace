@@ -457,10 +457,15 @@ class PostViewSet(viewsets.ModelViewSet):
         pagination_class=FeedCursorPagination,
     )
     def feed(self, request):
-        following_ids = Follow.objects.filter(follower=request.user).values_list(
-            "following_id", flat=True
+        following_ids = list(
+            Follow.objects.filter(follower=request.user).values_list("following_id", flat=True)
         )
-        qs = self.get_queryset().filter(Q(user_id__in=following_ids) | Q(user=request.user))
+        if following_ids:
+            qs = self.get_queryset().filter(Q(user_id__in=following_ids) | Q(user=request.user))
+        else:
+            # Discovery feed: a user who follows nobody yet sees recent activity
+            # from everyone, so the feed is never blank on first login.
+            qs = self.get_queryset()
         page = self.paginate_queryset(qs)
         serializer = self.get_serializer(page, many=True)
         return self.get_paginated_response(serializer.data)

@@ -195,6 +195,17 @@ class TestPosts:
         assert "from-carol" not in captions
         assert str(own.id)
 
+    def test_feed_falls_back_to_discovery_when_following_nobody(self, api, alice, bob):
+        # A user who follows nobody sees a global discovery feed, not a blank page.
+        carol = make_user("carol")
+        Post.objects.create(user=bob, image=tiny_image(), caption="from-bob")
+        Post.objects.create(user=carol, image=tiny_image(), caption="from-carol")
+
+        api.force_authenticate(user=alice)  # alice follows no one
+        resp = api.get("/api/v1/posts/feed/")
+        captions = {p["caption"] for p in resp.data["results"]}
+        assert {"from-bob", "from-carol"} <= captions
+
 
 class TestProfilesAndComments:
     def test_follow_toggle_and_counts(self, auth_alice, bob):
