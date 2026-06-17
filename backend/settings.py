@@ -189,9 +189,12 @@ GITHUB_STUB = env.bool("GITHUB_STUB", default=False)
 GITHUB_OAUTH_CLIENT_ID = env("GITHUB_OAUTH_CLIENT_ID", default="")
 GITHUB_OAUTH_CLIENT_SECRET = env("GITHUB_OAUTH_CLIENT_SECRET", default="")
 if not DEBUG:
-    GITHUB_OAUTH_CLIENT_ID = env("GITHUB_OAUTH_CLIENT_ID_PROD", default=GITHUB_OAUTH_CLIENT_ID)
-    GITHUB_OAUTH_CLIENT_SECRET = env(
-        "GITHUB_OAUTH_CLIENT_SECRET_PROD", default=GITHUB_OAUTH_CLIENT_SECRET
+    # Prefer the *_PROD pair, but coalesce empty strings to the base value — the
+    # compose file always *sets* the *_PROD vars (possibly to ""), and an empty
+    # env var is "present" to django-environ, so a plain default= wouldn't kick in.
+    GITHUB_OAUTH_CLIENT_ID = env("GITHUB_OAUTH_CLIENT_ID_PROD", default="") or GITHUB_OAUTH_CLIENT_ID
+    GITHUB_OAUTH_CLIENT_SECRET = (
+        env("GITHUB_OAUTH_CLIENT_SECRET_PROD", default="") or GITHUB_OAUTH_CLIENT_SECRET
     )
 GITHUB_OAUTH_SCOPES = env("GITHUB_OAUTH_SCOPES", default="read:user,public_repo")
 
