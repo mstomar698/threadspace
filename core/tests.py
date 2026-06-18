@@ -6,7 +6,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.utils import IntegrityError
 from django.urls import reverse
 
-from core.models import Follow, Like, Post, Profile
+from core.models import Follow, Like, Post, Profile, Repo
 
 User = get_user_model()
 
@@ -112,3 +112,68 @@ class TestViews:
         resp = client.get(reverse("index"))
         assert resp.status_code == 302
         assert "signin" in resp.url
+
+
+class TestSyncTopRepos:
+    def _catalogue(self):
+        return [
+            {
+                "full_name": f"owner{i}/repo{i}",
+                "name": f"repo{i}",
+                "owner": {"login": f"owner{i}", "avatar_url": "https://a.example/x.png"},
+                "html_url": f"https://github.com/owner{i}/repo{i}",
+                "description": f"Repo {i}",
+                "language": "Python",
+                "topics": [],
+                "stargazers_count": stars,
+                "forks_count": 1,
+                "open_issues_count": 1,
+                "pushed_at": "2026-01-01T00:00:00Z",
+            }
+            for i, stars in enumerate([900, 800, 700, 600, 500])
+        ]
+
+    def _fake_search(self, catalogue):
+        def fake(query, page=1, per_page=100, token=""):
+            # query is "stars:LO..HI"
+            stars_part = query.split(":", 1)[1]
+            lo, hi = (int(x) for x in stars_part.split(".."))
+            matches = sorted(
+                (r for r in catalogue if lo <= r["stargazers_count"] <= hi),
+                key=lambda r: -r["stargazers_count"],
+            )
+            start = (page - 1) * per_page
+            return {"total_count": len(matches), "items": matches[start : start + per_page]}
+
+        return fake
+
+    def test_syncs_and_marks_source(self, db, monkeypatch):
+        from django.core.management import call_command
+
+        from core import github
+
+        monkeypatch.setattr(github, "search_repositories", self._fake_search(self._catalogue()))
+        call_command("sync_top_repos", "--limit", "5", "--start-stars", "1000", "--sleep", "0")
+
+        assert Repo.objects.count() == 5
+        assert Repo.objects.filter(source="sync").count() == 5
+        assert Repo.objects.order_by("-stargazers_count").first().full_name == "owner0/repo0"
+
+    def test_respects_limit(self, db, monkeypatch):
+        from django.core.management import call_command
+
+        from core import github
+
+        monkeypatch.setattr(github, "search_repositories", self._fake_search(self._catalogue()))
+        call_command("sync_top_repos", "--limit", "3", "--start-stars", "1000", "--sleep", "0")
+        assert Repo.objects.count() == 3
+
+    def test_idempotent(self, db, monkeypatch):
+        from django.core.management import call_command
+
+        from core import github
+
+        monkeypatch.setattr(github, "search_repositories", self._fake_search(self._catalogue()))
+        call_command("sync_top_repos", "--limit", "5", "--start-stars", "1000", "--sleep", "0")
+        call_command("sync_top_repos", "--limit", "5", "--start-stars", "1000", "--sleep", "0")
+        assert Repo.objects.count() == 5

@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.core import signing
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Exists, OuterRef, Q
+from django.http import Http404
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, mixins, permissions, status, viewsets
 from rest_framework.decorators import action
@@ -11,14 +12,24 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from core import github
+from core import github, realtime
 from core.constants import is_reserved_username
 from core.github import RepoFetchError, RepoNotFound, get_or_refresh_repo
-from core.models import Comment, Follow, GitHubAccount, Like, Post, Profile, Repo
+from core.models import (
+    ChatMessage,
+    Comment,
+    Follow,
+    GitHubAccount,
+    Like,
+    Post,
+    Profile,
+    Repo,
+)
 
 from .pagination import FeedCursorPagination
 from .permissions import IsOwnerOrReadOnly
 from .serializers import (
+    ChatMessageSerializer,
     CommentSerializer,
     GitHubAccountSerializer,
     GithubLoginCallbackSerializer,
@@ -28,6 +39,7 @@ from .serializers import (
     RegisterSerializer,
     RepoResolveSerializer,
     RepoSerializer,
+    RepoSuggestSerializer,
 )
 
 User = get_user_model()
@@ -164,6 +176,64 @@ class RepoListView(generics.ListAPIView):
                 return qs.none()
             qs = qs.filter(owner_login__iexact=login)
         return qs.order_by("-stargazers_count", "full_name")
+
+
+class RepoSuggestView(generics.ListAPIView):
+    """Autofill suggestions for the composer's repo picker.
+
+    Prefix/substring match (``?q=``) against the cached catalogue, ranked by
+    stars. Capped to a handful of results; returns nothing for an empty query.
+    """
+
+    serializer_class = RepoSuggestSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    pagination_class = None
+
+    def get_queryset(self):
+        q = (self.request.query_params.get("q") or "").strip()
+        if not q:
+            return Repo.objects.none()
+        return Repo.objects.filter(Q(full_name__icontains=q) | Q(name__icontains=q)).order_by(
+            "-stargazers_count", "full_name"
+        )[:8]
+
+
+class RepoChatView(generics.ListCreateAPIView):
+    """A project's real-time chat room: paginated history (GET) and send (POST).
+
+    Sending persists the message and publishes it to the realtime gateway with a
+    ``room=<owner/name>`` audience so connected clients see it live; the gateway
+    itself stays dumb (fan-out only).
+    """
+
+    serializer_class = ChatMessageSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def _get_repo(self):
+        full_name = f"{self.kwargs['owner']}/{self.kwargs['name']}"
+        repo = Repo.objects.filter(full_name__iexact=full_name).first()
+        if not repo:
+            raise Http404("Unknown project.")
+        return repo
+
+    def get_queryset(self):
+        return (
+            ChatMessage.objects.filter(repo=self._get_repo())
+            .select_related("user", "user__profile")
+            .order_by("-created_at")
+        )
+
+    def perform_create(self, serializer):
+        repo = self._get_repo()
+        message = serializer.save(user=self.request.user, repo=repo)
+        event = {
+            "type": "chat.message",
+            "actor": self.request.user.username,
+            "title": message.body[:500],
+            "repo": repo.full_name,
+            "created_at": message.created_at.isoformat(),
+        }
+        realtime.publish_event(event, room=repo.full_name)
 
 
 class GithubAuthorizeURLView(APIView):
@@ -488,11 +558,18 @@ class CommentViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
 
     def get_queryset(self):
-        qs = Comment.objects.select_related("user", "user__profile")
+        qs = Comment.objects.select_related("user", "user__profile").annotate(
+            replies_count=Count("replies", distinct=True)
+        )
+        parent_id = self.request.query_params.get("parent")
         post_id = self.request.query_params.get("post")
-        if post_id:
-            qs = qs.filter(post_id=post_id)
-        return qs
+        if parent_id:
+            # Replies within a thread (flat, oldest first).
+            qs = qs.filter(parent_id=parent_id)
+        elif post_id:
+            # Top-level comments on a post; replies are fetched per-thread.
+            qs = qs.filter(post_id=post_id, parent__isnull=True)
+        return qs.order_by("created_at")
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)

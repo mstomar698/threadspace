@@ -155,6 +155,32 @@ class TestPosts:
         assert resp.data["author"]["username"] == "alice"
         assert Post.objects.filter(user=alice).count() == 1
 
+    def test_create_text_only_post(self, auth_alice, alice):
+        # A devlog can be text-only — no image required.
+        resp = auth_alice.post(
+            "/api/v1/posts/",
+            {"caption": "just shipped a thing"},
+            format="multipart",
+        )
+        assert resp.status_code == 201
+        assert resp.data["image"] is None
+        assert Post.objects.get(user=alice).image.name in ("", None)
+
+    def test_create_repo_only_post(self, auth_alice, alice, mock_github):
+        # A devlog can carry only an attached repo (no caption, no image).
+        resp = auth_alice.post(
+            "/api/v1/posts/",
+            {"repo_full_name": "django/django"},
+            format="multipart",
+        )
+        assert resp.status_code == 201
+        assert resp.data["repo"]["full_name"] == "django/django"
+
+    def test_empty_post_rejected(self, auth_alice):
+        # No image, no caption, no repo → 400.
+        resp = auth_alice.post("/api/v1/posts/", {"caption": "  "}, format="multipart")
+        assert resp.status_code == 400
+
     def test_anonymous_cannot_create_post(self, api, db):
         resp = api.post("/api/v1/posts/", {"caption": "x"}, format="multipart")
         assert resp.status_code == 401
@@ -236,6 +262,40 @@ class TestProfilesAndComments:
 
         listing = auth_alice.get(f"/api/v1/comments/?post={post.id}")
         assert listing.data["count"] == 1
+
+    def test_threaded_replies(self, auth_alice, bob):
+        post = Post.objects.create(user=bob, image=tiny_image(), caption="bob")
+        top = Comment.objects.create(user=bob, post=post, body="top-level")
+        # Reply to the top-level comment.
+        resp = auth_alice.post(
+            "/api/v1/comments/",
+            {"post": str(post.id), "parent": top.id, "body": "a reply"},
+            format="json",
+        )
+        assert resp.status_code == 201
+        assert resp.data["parent"] == top.id
+
+        # Top-level listing returns only the root, with a replies_count.
+        listing = auth_alice.get(f"/api/v1/comments/?post={post.id}")
+        assert listing.data["count"] == 1
+        assert listing.data["results"][0]["replies_count"] == 1
+
+        # Thread listing returns the replies.
+        thread = auth_alice.get(f"/api/v1/comments/?parent={top.id}")
+        assert {c["body"] for c in thread.data["results"]} == {"a reply"}
+
+    def test_reply_to_reply_reanchors_to_root(self, auth_alice, bob):
+        post = Post.objects.create(user=bob, image=tiny_image(), caption="bob")
+        top = Comment.objects.create(user=bob, post=post, body="top")
+        reply = Comment.objects.create(user=bob, post=post, body="reply", parent=top)
+        # Replying to a reply should re-anchor to the thread root (one level deep).
+        resp = auth_alice.post(
+            "/api/v1/comments/",
+            {"post": str(post.id), "parent": reply.id, "body": "deep"},
+            format="json",
+        )
+        assert resp.status_code == 201
+        assert resp.data["parent"] == top.id
 
     def test_search_profiles(self, auth_alice):
         make_user("zebra")
@@ -321,6 +381,34 @@ class TestGitHub:
 
         searched = auth_alice.get("/api/v1/github/repos/?search=flask")
         assert {r["full_name"] for r in searched.data["results"]} == {"pallets/flask"}
+
+    def test_repo_suggest(self, auth_alice, mock_github):
+        from core.github import get_or_refresh_repo
+
+        get_or_refresh_repo("django/django")
+        get_or_refresh_repo("pallets/flask")
+
+        resp = auth_alice.get("/api/v1/github/repos/suggest/?q=djang")
+        assert resp.status_code == 200
+        # Unpaginated slim list.
+        names = {r["full_name"] for r in resp.data}
+        assert names == {"django/django"}
+        assert set(resp.data[0].keys()) == {
+            "full_name",
+            "name",
+            "owner_login",
+            "description",
+            "language",
+            "stargazers_count",
+        }
+
+    def test_repo_suggest_empty_query(self, auth_alice, mock_github):
+        from core.github import get_or_refresh_repo
+
+        get_or_refresh_repo("django/django")
+        resp = auth_alice.get("/api/v1/github/repos/suggest/?q=")
+        assert resp.status_code == 200
+        assert resp.data == []
 
     def test_repo_list_mine(self, api, db, mock_github):
         from core.github import get_or_refresh_repo
@@ -608,6 +696,53 @@ class TestGitHubLogin:
         assert resp.status_code == 200
         assert resp.data[0]["full_name"] == "alice-gh/widget"
         assert Repo.objects.filter(full_name="alice-gh/widget").exists()
+
+
+class TestChat:
+    def _repo(self, mock_github):
+        from core.github import get_or_refresh_repo
+
+        return get_or_refresh_repo("django/django")
+
+    def test_send_and_list_chat(self, auth_alice, mock_github, monkeypatch):
+        from core import realtime
+
+        published = {}
+
+        def fake_publish(event, audience=None, room=None):
+            published["event"] = event
+            published["room"] = room
+
+        monkeypatch.setattr(realtime, "publish_event", fake_publish)
+        self._repo(mock_github)
+
+        resp = auth_alice.post(
+            "/api/v1/github/repos/django/django/chat/",
+            {"body": "hey team"},
+            format="json",
+        )
+        assert resp.status_code == 201
+        assert resp.data["author"]["username"] == "alice"
+        # Published to the project's room for live fan-out.
+        assert published["room"] == "django/django"
+        assert published["event"]["type"] == "chat.message"
+
+        listing = auth_alice.get("/api/v1/github/repos/django/django/chat/")
+        assert listing.data["count"] == 1
+        assert listing.data["results"][0]["body"] == "hey team"
+
+    def test_chat_unknown_repo_404(self, auth_alice):
+        resp = auth_alice.get("/api/v1/github/repos/nope/nope/chat/")
+        assert resp.status_code == 404
+
+    def test_anonymous_cannot_send_chat(self, api, db, mock_github):
+        self._repo(mock_github)
+        resp = api.post(
+            "/api/v1/github/repos/django/django/chat/",
+            {"body": "hi"},
+            format="json",
+        )
+        assert resp.status_code == 401
 
 
 class TestSeedDemo:

@@ -192,7 +192,9 @@ if not DEBUG:
     # Prefer the *_PROD pair, but coalesce empty strings to the base value — the
     # compose file always *sets* the *_PROD vars (possibly to ""), and an empty
     # env var is "present" to django-environ, so a plain default= wouldn't kick in.
-    GITHUB_OAUTH_CLIENT_ID = env("GITHUB_OAUTH_CLIENT_ID_PROD", default="") or GITHUB_OAUTH_CLIENT_ID
+    GITHUB_OAUTH_CLIENT_ID = (
+        env("GITHUB_OAUTH_CLIENT_ID_PROD", default="") or GITHUB_OAUTH_CLIENT_ID
+    )
     GITHUB_OAUTH_CLIENT_SECRET = (
         env("GITHUB_OAUTH_CLIENT_SECRET_PROD", default="") or GITHUB_OAUTH_CLIENT_SECRET
     )

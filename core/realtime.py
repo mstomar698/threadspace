@@ -26,8 +26,12 @@ def _send(url: str, payload: bytes, headers: dict[str, str]) -> None:
         logger.warning("realtime publish failed: %s", exc)
 
 
-def publish_event(event: dict, audience: list[str] | None = None) -> None:
+def publish_event(event: dict, audience: list[str] | None = None, room: str | None = None) -> None:
     """Publish an activity event to the realtime gateway without blocking.
+
+    ``audience`` targets specific usernames (follower fan-out); ``room`` targets a
+    named room (e.g. a project's chat, ``owner/name``). When both are ``None`` the
+    event broadcasts to every connected client.
 
     No-op when ``REALTIME_URL`` is not configured (e.g. local dev / tests).
     """
@@ -36,7 +40,7 @@ def publish_event(event: dict, audience: list[str] | None = None) -> None:
         return
 
     url = f"{base.rstrip('/')}/internal/publish"
-    payload = json.dumps({"audience": audience, "event": event}).encode()
+    payload = json.dumps({"audience": audience, "room": room, "event": event}).encode()
     headers = {"Content-Type": "application/json"}
     token = getattr(settings, "REALTIME_INTERNAL_TOKEN", "")
     if token:

@@ -8,7 +8,16 @@ from core.github import (
     RepoNotFound,
     get_or_refresh_repo,
 )
-from core.models import Comment, Follow, GitHubAccount, Like, Post, Profile, Repo
+from core.models import (
+    ChatMessage,
+    Comment,
+    Follow,
+    GitHubAccount,
+    Like,
+    Post,
+    Profile,
+    Repo,
+)
 
 User = get_user_model()
 
@@ -53,6 +62,21 @@ class RepoSerializer(serializers.ModelSerializer):
             "forks_count",
             "open_issues_count",
             "pushed_at",
+        ]
+
+
+class RepoSuggestSerializer(serializers.ModelSerializer):
+    """Slim repo shape for the composer's autofill dropdown."""
+
+    class Meta:
+        model = Repo
+        fields = [
+            "full_name",
+            "name",
+            "owner_login",
+            "description",
+            "language",
+            "stargazers_count",
         ]
 
 
@@ -168,6 +192,18 @@ class PostSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at"]
 
+    def validate(self, attrs):
+        # A devlog can be text-only, repo-only, or include an image — but it must
+        # carry at least one of the three so we never store an empty post.
+        has_image = bool(attrs.get("image"))
+        has_caption = bool((attrs.get("caption") or "").strip())
+        has_repo = bool((attrs.get("repo_full_name") or "").strip())
+        if not (has_image or has_caption or has_repo):
+            raise serializers.ValidationError(
+                "Add a caption, attach a repository, or include an image."
+            )
+        return attrs
+
     def create(self, validated_data):
         full_name = (validated_data.pop("repo_full_name", "") or "").strip()
         if full_name:
@@ -210,8 +246,38 @@ class CommentSerializer(serializers.ModelSerializer):
     parent = serializers.PrimaryKeyRelatedField(
         queryset=Comment.objects.all(), required=False, allow_null=True
     )
+    replies_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
-        fields = ["id", "post", "parent", "author", "body", "created_at"]
+        fields = ["id", "post", "parent", "author", "body", "replies_count", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def get_replies_count(self, obj) -> int:
+        if hasattr(obj, "replies_count"):
+            return obj.replies_count
+        return obj.replies.count()
+
+    def validate(self, attrs):
+        parent = attrs.get("parent")
+        if parent is not None:
+            # Slack-style threads are one level deep: a reply to a reply re-anchors
+            # to the thread root so replies stay flat under the top-level comment.
+            if parent.parent_id is not None:
+                parent = parent.parent
+                attrs["parent"] = parent
+            post = attrs.get("post")
+            if post is not None and parent.post_id != post.id:
+                raise serializers.ValidationError(
+                    {"parent": "Parent comment belongs to a different post."}
+                )
+        return attrs
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    author = AuthorSerializer(source="user", read_only=True)
+
+    class Meta:
+        model = ChatMessage
+        fields = ["id", "author", "body", "created_at"]
         read_only_fields = ["id", "created_at"]

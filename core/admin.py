@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from .models import Comment, Follow, GitHubAccount, Like, Post, Profile, Repo
+from .models import (
+    ChatMessage,
+    Comment,
+    Follow,
+    GitHubAccount,
+    Like,
+    Post,
+    Profile,
+    Repo,
+)
 
 
 @admin.register(Profile)
@@ -47,3 +56,10 @@ class GitHubAccountAdmin(admin.ModelAdmin):
     list_display = ("login", "user", "connected_at")
     search_fields = ("login", "user__username")
     autocomplete_fields = ("user",)
+
+
+@admin.register(ChatMessage)
+class ChatMessageAdmin(admin.ModelAdmin):
+    list_display = ("repo", "user", "created_at")
+    search_fields = ("repo__full_name", "user__username", "body")
+    autocomplete_fields = ("user", "repo")

@@ -26,7 +26,7 @@ class Profile(models.Model):
 class Post(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="posts")
-    image = models.ImageField(upload_to="post_images")
+    image = models.ImageField(upload_to="post_images", null=True, blank=True)
     caption = models.TextField(blank=True)
     repo = models.ForeignKey(
         "Repo",
@@ -80,9 +80,17 @@ class Repo(models.Model):
     open_issues_count = models.IntegerField(default=0)
     pushed_at = models.DateTimeField(null=True, blank=True)
     fetched_at = models.DateTimeField(auto_now=True)
+    # How this row entered the cache: "user" (resolved/imported by a member) or
+    # "sync" (pulled by the sync_top_repos catalogue job). Lets seeding sample
+    # the synced catalogue without touching members' own imported repos.
+    source = models.CharField(max_length=20, default="user")
 
     class Meta:
         ordering = ["full_name"]
+        indexes = [
+            models.Index(fields=["-stargazers_count"]),
+            models.Index(fields=["name"]),
+        ]
 
     def __str__(self):
         return self.full_name
@@ -107,6 +115,22 @@ class Comment(models.Model):
 
     def __str__(self):
         return f"{self.user.username}: {self.body[:30]}"
+
+
+class ChatMessage(models.Model):
+    """A message in a project's real-time chat room (one room per repo)."""
+
+    repo = models.ForeignKey(Repo, on_delete=models.CASCADE, related_name="chat_messages")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="chat_messages")
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["repo", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.user.username} @ {self.repo.full_name}: {self.body[:30]}"
 
 
 class GitHubAccount(models.Model):

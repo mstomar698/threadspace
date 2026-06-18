@@ -40,6 +40,18 @@ class OAuthError(Exception):
     pass
 
 
+class RateLimited(RepoFetchError):
+    """Raised when GitHub returns a rate-limit response (primary or secondary).
+
+    ``reset_epoch`` is the unix time the limit resets (from ``X-RateLimit-Reset``)
+    when GitHub provides it, else ``None``.
+    """
+
+    def __init__(self, reset_epoch: int | None = None):
+        super().__init__("GitHub rate limit exceeded")
+        self.reset_epoch = reset_epoch
+
+
 def _stub_enabled() -> bool:
     return bool(getattr(settings, "GITHUB_STUB", False))
 
@@ -116,7 +128,7 @@ def fetch_repo_metadata(full_name: str) -> dict:
         raise RepoFetchError(str(exc)) from exc
 
 
-def _apply_metadata(repo: Repo, data: dict) -> Repo:
+def _apply_metadata(repo: Repo, data: dict, source: str | None = None) -> Repo:
     owner = data.get("owner") or {}
     repo.full_name = data["full_name"]
     repo.name = data.get("name", "")
@@ -132,8 +144,47 @@ def _apply_metadata(repo: Repo, data: dict) -> Repo:
     repo.open_issues_count = data.get("open_issues_count", 0)
     pushed_at = data.get("pushed_at")
     repo.pushed_at = parse_datetime(pushed_at) if pushed_at else None
+    if source is not None:
+        repo.source = source
     repo.save()
     return repo
+
+
+def search_repositories(query: str, page: int = 1, per_page: int = 100, token: str = "") -> dict:
+    """Call GitHub's repository search API (sorted by stars, descending).
+
+    Returns the parsed JSON (``{'total_count', 'items': [...]}``). Raises
+    :class:`RateLimited` on a rate-limit response and :class:`RepoFetchError`
+    otherwise. Mocked in tests / no-op under ``GITHUB_STUB``.
+    """
+    if _stub_enabled():
+        return {"total_count": 0, "items": []}
+    params = urllib.parse.urlencode(
+        {"q": query, "sort": "stars", "order": "desc", "per_page": per_page, "page": page}
+    )
+    request = urllib.request.Request(
+        f"{GITHUB_API}/search/repositories?{params}",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "ThreadSpace",
+        },
+    )
+    token = token or getattr(settings, "GITHUB_API_TOKEN", "")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+
+    try:
+        with urllib.request.urlopen(request, timeout=15) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        # 403 with remaining=0 (or 429) means rate limited; surface the reset time.
+        remaining = exc.headers.get("X-RateLimit-Remaining") if exc.headers else None
+        if exc.code == 429 or (exc.code == 403 and remaining == "0"):
+            reset = exc.headers.get("X-RateLimit-Reset") if exc.headers else None
+            raise RateLimited(int(reset) if reset else None) from exc
+        raise RepoFetchError(f"GitHub search returned {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise RepoFetchError(str(exc)) from exc
 
 
 def get_or_refresh_repo(identifier: str) -> Repo:

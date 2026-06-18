@@ -316,6 +316,23 @@ USERS = {
     ),
 }
 
+# Generic build-in-public devlog templates, attached to repos sampled from the
+# catalogue (real synced repos on prod; the curated fallback above offline). These
+# are text+repo-only posts — no image — so they also exercise image-optional posts
+# and add volume without generating hundreds of banner PNGs.
+COMMUNITY_TEMPLATES = [
+    "Spent the afternoon reading through {name}'s internals. So much to learn here. 📚",
+    "{name} shipped a new release — upgrading today and the changelog is 🔥",
+    "Benchmarking {name} against our current setup. Early numbers look promising.",
+    "Finally contributed my first PR to {name}. Maintainers were super welcoming. 🙌",
+    "TIL a neat trick from {name}'s codebase that I'm stealing for my own project.",
+    "Migrated a side project over to {name} this weekend. Zero regrets so far.",
+    "{name} is criminally underrated. Give it a star if you haven't. ⭐",
+    "Pairing with a teammate on a tricky bug in {name} — rubber-ducking FTW.",
+    "Reading the {name} design docs to understand how they handle backpressure.",
+    "{name}'s DX keeps getting better release after release. Kudos to the team.",
+]
+
 # (follower, following) edges — a small but connected social graph.
 FOLLOWS = [
     ("ada-rs", "kai-dev"),
@@ -335,6 +352,14 @@ FOLLOWS = [
 
 class Command(BaseCommand):
     help = "Seed realistic demo users, real OSS projects, posts, follows, likes, and comments."
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--community-posts",
+            type=int,
+            default=120,
+            help="How many text+repo-only devlogs to attach to top catalogue repos.",
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -430,6 +455,20 @@ class Command(BaseCommand):
             target = posts_by_user.get(author)
             if target:
                 Comment.objects.get_or_create(post=target[0], user=users[commenter], body=body)
+
+        # 7. Community devlogs — attach text+repo-only posts to the most-starred
+        # repos in the catalogue (real synced repos on prod, curated fallback
+        # offline), rotating authors. Deterministic + idempotent (caption embeds
+        # the repo, so re-runs match existing rows).
+        wanted = max(0, options["community_posts"])
+        user_list = list(users.values())
+        top_repos = list(Repo.objects.order_by("-stargazers_count", "full_name")[:wanted])
+        for i, repo in enumerate(top_repos):
+            caption = COMMUNITY_TEMPLATES[i % len(COMMUNITY_TEMPLATES)].format(name=repo.full_name)
+            author = user_list[i % len(user_list)]
+            Post.objects.get_or_create(
+                user=author, caption=caption, defaults={"repo": repo, "image": None}
+            )
 
         repos = Repo.objects.count()
         self.stdout.write(
