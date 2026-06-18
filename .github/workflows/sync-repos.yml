@@ -1,0 +1,44 @@
+name: Sync top repos
+
+# Refresh the catalogue of most-starred public repositories on the production VM
+# so the composer's project autofill has fresh, real data. Runs nightly and on
+# demand. SSHes to the VM (reusing the deploy secrets) and runs the Django
+# management command inside the backend container.
+#
+# Required repository secrets (same as Deploy):
+#   DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH
+# The VM's .env.production must carry GITHUB_API_TOKEN for a usable rate limit.
+
+on:
+  schedule:
+    - cron: "17 4 * * *" # 04:17 UTC nightly
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "How many repos to sync"
+        required: false
+        default: "10000"
+
+concurrency:
+  group: sync-top-repos
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync repo catalogue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run sync_top_repos on the VM
+        env:
+          LIMIT: ${{ github.event.inputs.limit || '10000' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd '${{ secrets.DEPLOY_PATH }}' && docker compose -f docker-compose.prod.yml --env-file .env.production exec -T backend python manage.py sync_top_repos --limit ${LIMIT}"
