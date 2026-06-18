@@ -48,6 +48,14 @@ THREAD_REPLIES = [
     "Will drop them in the next devlog 👀",
 ]
 
+# Text-only posts that @-mention users, so Explore → Mentions has data.
+MENTION_POSTS = [
+    ("ada-rs", "Huge thanks to @mstomar698 for the thorough code review 🙌"),
+    ("kai-dev", "Pairing with @mstomar698 and @ada-rs on the build cache today."),
+    ("linh-ml", "@mstomar698 your ranking write-up finally made gravity click for me."),
+    ("marco-web", "shoutout to @sora-ai and @mstomar698 for the design feedback ✨"),
+]
+
 
 class Command(BaseCommand):
     help = "Seed chat messages and deeply-nested comment threads (incl. mstomar698)."
@@ -84,8 +92,13 @@ class Command(BaseCommand):
                 )
                 chats += int(made)
 
-        # 2. Deeply-nested threads on the most recent posts.
-        posts = list(Post.objects.order_by("-created_at")[: len(THREAD_OPENERS)])
+        # 2. Deeply-nested threads on the most recent posts. Exclude @-mention
+        # posts (seeded below) so the target set stays stable across re-runs.
+        posts = list(
+            Post.objects.exclude(caption__icontains="@").order_by("-created_at")[
+                : len(THREAD_OPENERS)
+            ]
+        )
         deepest = 0
         for opener, post in zip(THREAD_OPENERS, posts, strict=False):
             top, _ = Comment.objects.get_or_create(
@@ -108,10 +121,23 @@ class Command(BaseCommand):
                 body="Adding my take here too — great thread. (mstomar698)",
             )
 
+        # 3. A few @-mention posts so Explore → Mentions has content.
+        by_name = {u.username: u for u in users}
+        mentions = 0
+        for author_name, caption in MENTION_POSTS:
+            author = by_name.get(author_name)
+            if not author:
+                continue
+            _, made = Post.objects.get_or_create(
+                user=author, caption=caption, defaults={"image": None}
+            )
+            mentions += int(made)
+
         self.stdout.write(
             self.style.SUCCESS(
-                f"Seeded {chats} chat messages across {len(rooms)} rooms and "
-                f"threads up to depth {deepest} on {len(posts)} posts."
+                f"Seeded {chats} chat messages across {len(rooms)} rooms, "
+                f"threads up to depth {deepest} on {len(posts)} posts, "
+                f"and {mentions} @-mention posts."
             )
         )
         self.stdout.write(f"Participants: {', '.join(PARTICIPANTS)}")

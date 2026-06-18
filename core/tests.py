@@ -151,6 +151,9 @@ class TestSeedThreads:
         # The owner participates somewhere in the threads.
         assert Comment.objects.filter(user=owner).exists()
 
+        # @-mention posts exist (for Explore → Mentions).
+        assert Post.objects.filter(caption__icontains="@mstomar698").exists()
+
     def test_idempotent(self, db):
         from django.core.management import call_command
 
