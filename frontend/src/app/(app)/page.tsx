@@ -29,7 +29,7 @@ export default function FeedPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Feed</h1>
         <p className="text-sm text-muted">
-          Latest from people you follow — and fresh builds to discover.
+          Trending builds from people you follow — freshest and most active first.
         </p>
       </div>
 

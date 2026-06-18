@@ -163,6 +163,56 @@ class TestSeedThreads:
         assert (Comment.objects.count(), ChatMessage.objects.count()) == (c1, m1)
 
 
+class TestRanking:
+    def _now(self):
+        from django.utils import timezone
+
+        return timezone.now()
+
+    def test_more_engagement_ranks_higher_at_same_age(self):
+        from core.ranking import hot_score
+
+        now = self._now()
+        assert hot_score(10, 5, now, now) > hot_score(0, 0, now, now)
+
+    def test_newer_ranks_higher_with_same_engagement(self):
+        from datetime import timedelta
+
+        from core.ranking import hot_score
+
+        now = self._now()
+        fresh = hot_score(0, 0, now, now)
+        stale = hot_score(0, 0, now - timedelta(hours=10), now)
+        assert fresh > stale
+
+    def test_comments_weighted_above_likes(self):
+        from core.ranking import hot_score
+
+        now = self._now()
+        # Same total count, but as comments vs likes — comments score higher.
+        assert hot_score(0, 4, now, now) > hot_score(4, 0, now, now)
+
+    def test_trending_old_post_beats_quiet_new_post(self):
+        from datetime import timedelta
+
+        from core.ranking import hot_score
+
+        now = self._now()
+        old_popular = hot_score(40, 20, now - timedelta(hours=20), now)
+        new_quiet = hot_score(0, 0, now, now)
+        assert old_popular > new_quiet
+
+    def test_rank_posts_orders_by_score(self):
+        from types import SimpleNamespace
+
+        from core.ranking import rank_posts
+
+        now = self._now()
+        a = SimpleNamespace(num_likes=100, comments_count=50, created_at=now)
+        b = SimpleNamespace(num_likes=0, comments_count=0, created_at=now)
+        assert rank_posts([b, a], now) == [a, b]
+
+
 def _depth(comment):
     d = 1
     node = comment

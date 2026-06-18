@@ -5,6 +5,7 @@ from django.core import signing
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from django.http import Http404
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, mixins, permissions, status, viewsets
 from rest_framework.decorators import action
@@ -25,8 +26,9 @@ from core.models import (
     Profile,
     Repo,
 )
+from core.ranking import rank_posts
 
-from .pagination import FeedCursorPagination
+from .pagination import FeedPagination
 from .permissions import IsOwnerOrReadOnly
 from .serializers import (
     ChatMessageSerializer,
@@ -521,24 +523,41 @@ class PostViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    # Newest N posts considered for ranking each request. Bounds the work and
+    # keeps the feed focused on recent activity while engagement re-ranks within
+    # the window.
+    FEED_CANDIDATE_LIMIT = 500
+
     @action(
         detail=False,
         permission_classes=[permissions.IsAuthenticated],
-        pagination_class=FeedCursorPagination,
+        pagination_class=FeedPagination,
     )
     def feed(self, request):
+        """Ranked feed: recent posts ordered by a time-decayed engagement score.
+
+        See ``core.ranking`` — newest builds surface immediately, likes/comments
+        keep active posts near the top, and the score decays with age.
+        """
         following_ids = list(
             Follow.objects.filter(follower=request.user).values_list("following_id", flat=True)
         )
         if following_ids:
             qs = self.get_queryset().filter(Q(user_id__in=following_ids) | Q(user=request.user))
         else:
-            # Discovery feed: a user who follows nobody yet sees recent activity
-            # from everyone, so the feed is never blank on first login.
+            # Discovery feed: a user who follows nobody yet sees activity from
+            # everyone, so the feed is never blank on first login.
             qs = self.get_queryset()
-        page = self.paginate_queryset(qs)
+
+        # Take a bounded, recent candidate window, then rank it by score. (The
+        # queryset is already ordered -created_at.)
+        candidates = list(qs[: self.FEED_CANDIDATE_LIMIT])
+        ranked = rank_posts(candidates, timezone.now())
+
+        paginator = FeedPagination()
+        page = paginator.paginate_queryset(ranked, request, view=self)
         serializer = self.get_serializer(page, many=True)
-        return self.get_paginated_response(serializer.data)
+        return paginator.get_paginated_response(serializer.data)
 
     @extend_schema(
         request=None,

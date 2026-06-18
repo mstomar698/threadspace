@@ -232,6 +232,38 @@ class TestPosts:
         captions = {p["caption"] for p in resp.data["results"]}
         assert {"from-bob", "from-carol"} <= captions
 
+    def test_feed_ranks_trending_above_quiet_new(self, api, alice, bob):
+        # An older but highly-engaged post should rank above a brand-new quiet one.
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        now = timezone.now()
+        old_popular = Post.objects.create(user=bob, image=tiny_image(), caption="old-popular")
+        Post.objects.filter(id=old_popular.id).update(created_at=now - timedelta(hours=20))
+        for i in range(30):
+            Comment.objects.create(post=old_popular, user=bob, body=f"c{i}")
+
+        Post.objects.create(user=bob, image=tiny_image(), caption="new-quiet")
+
+        api.force_authenticate(user=alice)
+        caps = [p["caption"] for p in api.get("/api/v1/posts/feed/").data["results"]]
+        assert caps.index("old-popular") < caps.index("new-quiet")
+
+    def test_feed_ranks_newer_above_older_when_both_quiet(self, api, alice, bob):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        now = timezone.now()
+        older = Post.objects.create(user=bob, image=tiny_image(), caption="older-quiet")
+        Post.objects.filter(id=older.id).update(created_at=now - timedelta(hours=10))
+        Post.objects.create(user=bob, image=tiny_image(), caption="newer-quiet")
+
+        api.force_authenticate(user=alice)
+        caps = [p["caption"] for p in api.get("/api/v1/posts/feed/").data["results"]]
+        assert caps.index("newer-quiet") < caps.index("older-quiet")
+
 
 class TestProfilesAndComments:
     def test_follow_toggle_and_counts(self, auth_alice, bob):
