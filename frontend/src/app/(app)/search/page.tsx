@@ -3,6 +3,7 @@
 import { Avatar } from "@/components/ui/avatar";
 import { Card, EmptyState, Spinner } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { LoadMore } from "@/components/load-more";
 import { useSearch } from "@/lib/queries";
 import { Search as SearchIcon } from "lucide-react";
 import Link from "next/link";
@@ -10,7 +11,15 @@ import { useState } from "react";
 
 export default function SearchPage() {
   const [q, setQ] = useState("");
-  const { data, isLoading, isFetching } = useSearch(q);
+  const {
+    data,
+    isLoading,
+    isFetching,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useSearch(q);
+  const results = data?.pages.flatMap((p) => p.results) ?? [];
 
   return (
     <div className="space-y-4">
@@ -36,13 +45,13 @@ export default function SearchPage() {
           title="Search ThreadSpace"
           description="Type a username to discover developers."
         />
-      ) : isLoading || isFetching ? (
+      ) : isLoading || (isFetching && results.length === 0) ? (
         <div className="flex justify-center py-12">
           <Spinner />
         </div>
-      ) : data && data.results.length > 0 ? (
+      ) : results.length > 0 ? (
         <div className="space-y-2">
-          {data.results.map((p) => (
+          {results.map((p) => (
             <Link key={p.username} href={`/${p.username}`}>
               <Card className="flex items-center gap-3 p-3 transition-colors hover:bg-surface-2">
                 <Avatar src={p.profileimg} username={p.username} size={44} />
@@ -55,6 +64,11 @@ export default function SearchPage() {
               </Card>
             </Link>
           ))}
+          <LoadMore
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            fetchNextPage={fetchNextPage}
+          />
         </div>
       ) : (
         <EmptyState title="No results" description={`No users match "${q}".`} />

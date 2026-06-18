@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { api } from "./api";
 import type {
+  ChatMessage,
   Comment,
   CursorPaginated,
   GitHubAccountStatus,
@@ -14,15 +15,18 @@ import type {
   Post,
   Profile,
   Repo,
+  RepoSuggestion,
 } from "./types";
 
 export const keys = {
   feed: ["feed"] as const,
   profile: (username: string) => ["profile", username] as const,
   comments: (postId: string) => ["comments", postId] as const,
+  replies: (parentId: number) => ["replies", parentId] as const,
   search: (q: string) => ["search", q] as const,
   repo: (fullName: string) => ["repo", fullName] as const,
   projectPosts: (fullName: string) => ["project-posts", fullName] as const,
+  chat: (fullName: string) => ["chat", fullName] as const,
   githubAccount: ["github-account"] as const,
 };
 
@@ -45,28 +49,51 @@ export function useProfile(username: string) {
 }
 
 export function useProfilePosts(username: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ["profile-posts", username],
-    queryFn: () =>
-      api.get<Paginated<Post>>(`/posts/?author=${encodeURIComponent(username)}`),
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Post>>(
+        pageParam ?? `/posts/?author=${encodeURIComponent(username)}`,
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
     enabled: !!username,
   });
 }
 
 export function useSearch(q: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: keys.search(q),
-    queryFn: () =>
-      api.get<Paginated<Profile>>(`/profiles/?search=${encodeURIComponent(q)}`),
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Profile>>(
+        pageParam ?? `/profiles/?search=${encodeURIComponent(q)}`,
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
     enabled: q.trim().length > 0,
   });
 }
 
 export function useComments(postId: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: keys.comments(postId),
-    queryFn: () => api.get<Paginated<Comment>>(`/comments/?post=${postId}`),
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Comment>>(pageParam ?? `/comments/?post=${postId}`),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
     enabled: !!postId,
+  });
+}
+
+/** Replies within a thread (one level deep). Disabled until the thread opens. */
+export function useReplies(parentId: number, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: keys.replies(parentId),
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Comment>>(pageParam ?? `/comments/?parent=${parentId}`),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
+    enabled: enabled && !!parentId,
   });
 }
 
@@ -74,13 +101,31 @@ export function useCreatePost() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (form: FormData) => api.postForm<Post>("/posts/", form),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.feed }),
+    onSuccess: () => {
+      // A new post should surface everywhere it could appear, overriding the
+      // 30s staleTime so the author's profile and the project's devlogs refetch.
+      qc.invalidateQueries({ queryKey: keys.feed });
+      qc.invalidateQueries({ queryKey: ["profile-posts"] });
+      qc.invalidateQueries({ queryKey: ["project-posts"] });
+    },
   });
 }
 
 export function useResolveRepo() {
   return useMutation({
     mutationFn: (q: string) => api.post<Repo>("/github/resolve/", { q }),
+  });
+}
+
+/** Autofill suggestions from the cached repo catalogue (debounce the input). */
+export function useRepoSuggest(q: string) {
+  return useQuery({
+    queryKey: ["repo-suggest", q],
+    queryFn: () =>
+      api.get<RepoSuggestion[]>(
+        `/github/repos/suggest/?q=${encodeURIComponent(q)}`,
+      ),
+    enabled: q.trim().length > 0,
   });
 }
 
@@ -94,38 +139,79 @@ export function useRepo(owner: string, name: string) {
 
 /** The current user's imported repositories. */
 export function useMyRepos() {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ["repos", "mine"],
-    queryFn: () => api.get<Paginated<Repo>>("/github/repos/?mine=1"),
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Repo>>(pageParam ?? "/github/repos/?mine=1"),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
   });
 }
 
 /** Repositories owned by a given GitHub login (for profile pages). */
 export function useUserRepos(owner: string | null | undefined) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ["repos", "owner", owner],
-    queryFn: () =>
-      api.get<Paginated<Repo>>(`/github/repos/?owner=${encodeURIComponent(owner ?? "")}`),
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Repo>>(
+        pageParam ?? `/github/repos/?owner=${encodeURIComponent(owner ?? "")}`,
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
     enabled: !!owner,
   });
 }
 
 /** Search across all cached projects. */
 export function useRepoSearch(q: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ["repos", "search", q],
-    queryFn: () =>
-      api.get<Paginated<Repo>>(`/github/repos/?search=${encodeURIComponent(q)}`),
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Repo>>(
+        pageParam ?? `/github/repos/?search=${encodeURIComponent(q)}`,
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
     enabled: q.trim().length > 0,
   });
 }
 
 export function useProjectPosts(fullName: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: keys.projectPosts(fullName),
-    queryFn: () =>
-      api.get<Paginated<Post>>(`/posts/?repo=${encodeURIComponent(fullName)}`),
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Post>>(
+        pageParam ?? `/posts/?repo=${encodeURIComponent(fullName)}`,
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
     enabled: !!fullName,
+  });
+}
+
+/** Paginated chat history for a project room (newest page first). */
+export function useChatHistory(owner: string, name: string) {
+  const fullName = `${owner}/${name}`;
+  return useInfiniteQuery({
+    queryKey: keys.chat(fullName),
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<ChatMessage>>(
+        pageParam ?? `/github/repos/${owner}/${name}/chat/`,
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
+    enabled: !!owner && !!name,
+  });
+}
+
+/** Send a message to a project's chat room. */
+export function useSendChat(owner: string, name: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) =>
+      api.post<ChatMessage>(`/github/repos/${owner}/${name}/chat/`, { body }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: keys.chat(`${owner}/${name}`) }),
   });
 }
 
@@ -212,10 +298,18 @@ export function useToggleFollow(username: string) {
 export function useAddComment(postId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: string) =>
-      api.post<Comment>("/comments/", { post: postId, body }),
-    onSuccess: () => {
+    mutationFn: (input: { body: string; parent?: number }) =>
+      api.post<Comment>("/comments/", {
+        post: postId,
+        body: input.body,
+        ...(input.parent ? { parent: input.parent } : {}),
+      }),
+    onSuccess: (_data, input) => {
+      // Refresh top-level comments (also updates each comment's replies_count).
       qc.invalidateQueries({ queryKey: keys.comments(postId) });
+      if (input.parent) {
+        qc.invalidateQueries({ queryKey: keys.replies(input.parent) });
+      }
       qc.invalidateQueries({ queryKey: keys.feed });
     },
   });

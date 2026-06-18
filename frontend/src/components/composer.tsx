@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Card, Spinner } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
 import { errorMessage } from "@/lib/api";
-import { useCreatePost, useResolveRepo } from "@/lib/queries";
+import { useCreatePost, useRepoSuggest, useResolveRepo } from "@/lib/queries";
 import type { Repo } from "@/lib/types";
 import { useAuth } from "@/providers/auth-provider";
-import { GitBranch, ImagePlus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { GitBranch, ImagePlus, Star, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar } from "./ui/avatar";
 import { RepoCard } from "./repo-card";
 
@@ -30,23 +30,36 @@ export function Composer({
   const [error, setError] = useState<string | null>(null);
   const [showRepoInput, setShowRepoInput] = useState(false);
   const [repoQuery, setRepoQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [repo, setRepo] = useState<Repo | null>(pinnedRepo ?? null);
   const locked = !!pinnedRepo;
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Debounce the autofill query so we hit the suggest endpoint ~3×/sec at most.
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQuery(repoQuery.trim()), 250);
+    return () => clearTimeout(id);
+  }, [repoQuery]);
+  const { data: suggestions } = useRepoSuggest(showRepoInput ? debouncedQuery : "");
 
   function pickFile(f: File | null) {
     setFile(f);
     setPreview(f ? URL.createObjectURL(f) : null);
   }
 
-  async function attachRepo() {
-    if (!repoQuery.trim()) return;
+  // Resolve a repo reference (owner/name, URL, or a picked suggestion) to the
+  // full cached Repo and attach it. DB-first: suggestions resolve instantly
+  // from the cache; an unknown owner/name falls back to a live GitHub lookup.
+  async function attachRepo(value?: string) {
+    const q = (value ?? repoQuery).trim();
+    if (!q) return;
     setError(null);
     try {
-      const resolved = await resolveRepo.mutateAsync(repoQuery.trim());
+      const resolved = await resolveRepo.mutateAsync(q);
       setRepo(resolved);
       setShowRepoInput(false);
       setRepoQuery("");
+      setDebouncedQuery("");
     } catch (err) {
       setError(errorMessage(err, "Could not find that repository"));
     }
@@ -54,12 +67,14 @@ export function Composer({
 
   async function submit() {
     setError(null);
-    if (!file) {
-      setError("Add an image to share your build.");
+    // A devlog can be text-only, repo-only, or include an image — but needs at
+    // least one of the three.
+    if (!file && !caption.trim() && !repo) {
+      setError("Write something, attach a repo, or add an image.");
       return;
     }
     const form = new FormData();
-    form.append("image", file);
+    if (file) form.append("image", file);
     form.append("caption", caption);
     if (repo) form.append("repo_full_name", repo.full_name);
     try {
@@ -118,18 +133,48 @@ export function Composer({
           )}
 
           {showRepoInput && (
-            <div className="mt-2 flex gap-2">
-              <Input
-                value={repoQuery}
-                onChange={(e) => setRepoQuery(e.target.value)}
-                placeholder="owner/name or GitHub URL"
-                className="h-9"
-                onKeyDown={(e) => e.key === "Enter" && attachRepo()}
-                autoFocus
-              />
-              <Button size="sm" onClick={attachRepo} disabled={resolveRepo.isPending}>
-                {resolveRepo.isPending ? <Spinner className="h-4 w-4" /> : "Add"}
-              </Button>
+            <div className="mt-2">
+              <div className="flex gap-2">
+                <Input
+                  value={repoQuery}
+                  onChange={(e) => setRepoQuery(e.target.value)}
+                  placeholder="Search projects, or owner/name…"
+                  className="h-9"
+                  onKeyDown={(e) => e.key === "Enter" && attachRepo()}
+                  autoFocus
+                />
+                <Button size="sm" onClick={() => attachRepo()} disabled={resolveRepo.isPending}>
+                  {resolveRepo.isPending ? <Spinner className="h-4 w-4" /> : "Add"}
+                </Button>
+              </div>
+              {suggestions && suggestions.length > 0 && (
+                <ul className="mt-1 overflow-hidden rounded-lg border border-border-strong bg-surface">
+                  {suggestions.map((s) => (
+                    <li key={s.full_name}>
+                      <button
+                        type="button"
+                        onClick={() => attachRepo(s.full_name)}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-surface-2"
+                      >
+                        <span className="min-w-0">
+                          <span className="font-mono text-sm">
+                            {s.owner_login}/<span className="text-accent">{s.name}</span>
+                          </span>
+                          {s.description && (
+                            <span className="block truncate text-xs text-muted">
+                              {s.description}
+                            </span>
+                          )}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1 text-xs text-faint">
+                          <Star className="h-3 w-3" />
+                          {s.stargazers_count.toLocaleString()}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 

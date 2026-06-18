@@ -2,6 +2,7 @@
 
 import { PostCard } from "@/components/post-card";
 import { RepoCard } from "@/components/repo-card";
+import { LoadMore } from "@/components/load-more";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState, Spinner } from "@/components/ui/card";
@@ -29,9 +30,12 @@ export default function ProfilePage() {
   const username = params.username;
   const { profile: me, refresh } = useAuth();
   const { data: profile, isLoading } = useProfile(username);
-  const { data: posts } = useProfilePosts(username);
-  const { data: repos } = useUserRepos(profile?.github_login);
+  const postsQuery = useProfilePosts(username);
+  const reposQuery = useUserRepos(profile?.github_login);
   const toggleFollow = useToggleFollow(username);
+
+  const posts = postsQuery.data?.pages.flatMap((p) => p.results) ?? [];
+  const repos = reposQuery.data?.pages.flatMap((p) => p.results) ?? [];
 
   if (isLoading || !profile) {
     return (
@@ -81,16 +85,21 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {repos && repos.results.length > 0 && (
+      {repos.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-faint">
             Projects
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            {repos.results.map((repo) => (
+            {repos.map((repo) => (
               <RepoCard key={repo.full_name} repo={repo} />
             ))}
           </div>
+          <LoadMore
+            hasNextPage={reposQuery.hasNextPage}
+            isFetchingNextPage={reposQuery.isFetchingNextPage}
+            fetchNextPage={reposQuery.fetchNextPage}
+          />
         </section>
       )}
 
@@ -98,8 +107,17 @@ export default function ProfilePage() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-faint">
           Posts
         </h2>
-        {posts && posts.results.length > 0 ? (
-          posts.results.map((post) => <PostCard key={post.id} post={post} />)
+        {posts.length > 0 ? (
+          <>
+            {posts.map((post) => (
+              <PostCard key={post.id} post={post} />
+            ))}
+            <LoadMore
+              hasNextPage={postsQuery.hasNextPage}
+              isFetchingNextPage={postsQuery.isFetchingNextPage}
+              fetchNextPage={postsQuery.fetchNextPage}
+            />
+          </>
         ) : (
           <EmptyState title="No posts yet" />
         )}

@@ -33,10 +33,14 @@ test("post a devlog directly from a project page", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "maker/coolproject" })).toBeVisible();
 
   const caption = `Update from the project page ${Date.now()}`;
-  await page.getByPlaceholder(/Share an update on coolproject/).fill(caption);
+  const composer = page.getByPlaceholder(/Share an update on coolproject/);
+  await composer.fill(caption);
   await page.locator('input[type="file"]').setInputFiles("e2e/fixtures/sample.png");
   await page.getByRole("button", { name: "Post" }).click();
 
+  // Wait for the composer to clear (post succeeded) before asserting, so we
+  // don't match the still-filled textarea or race the in-flight upload.
+  await expect(composer).toHaveValue("");
   // The new devlog appears in the project's Devlogs list.
   await expect(page.getByText(caption)).toBeVisible();
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { RepoCard } from "@/components/repo-card";
+import { LoadMore } from "@/components/load-more";
 import { EmptyState, Spinner } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useMyRepos, useRepoSearch } from "@/lib/queries";
@@ -14,7 +15,7 @@ export default function ProjectsPage() {
   const mine = useMyRepos();
   const search = useRepoSearch(q);
   const active = searching ? search : mine;
-  const repos = active.data?.results ?? [];
+  const repos = active.data?.pages.flatMap((p) => p.results) ?? [];
 
   return (
     <div className="space-y-4">
@@ -54,11 +55,18 @@ export default function ProjectsPage() {
           />
         )
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {repos.map((repo) => (
-            <RepoCard key={repo.full_name} repo={repo} />
-          ))}
-        </div>
+        <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {repos.map((repo) => (
+              <RepoCard key={repo.full_name} repo={repo} />
+            ))}
+          </div>
+          <LoadMore
+            hasNextPage={active.hasNextPage}
+            isFetchingNextPage={active.isFetchingNextPage}
+            fetchNextPage={active.fetchNextPage}
+          />
+        </>
       )}
 
       {!searching && repos.length > 0 && (

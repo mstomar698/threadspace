@@ -1,25 +1,33 @@
 "use client";
 
+import { ChatPanel } from "@/components/chat-panel";
 import { Composer } from "@/components/composer";
 import { PostCard } from "@/components/post-card";
+import { LoadMore } from "@/components/load-more";
 import { EmptyState, Spinner } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { keys, useProjectPosts, useRepo } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ExternalLink,
   GitFork,
   CircleDot,
+  MessagesSquare,
+  ScrollText,
   Star,
 } from "lucide-react";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 
 export default function ProjectPage() {
   const params = useParams<{ owner: string; name: string }>();
   const { owner, name } = params;
   const fullName = `${owner}/${name}`;
   const qc = useQueryClient();
+  const [tab, setTab] = useState<"devlogs" | "chat">("devlogs");
   const { data: repo, isLoading, isError } = useRepo(owner, name);
-  const { data: posts } = useProjectPosts(fullName);
+  const postsQuery = useProjectPosts(fullName);
+  const posts = postsQuery.data?.pages.flatMap((p) => p.results) ?? [];
 
   if (isLoading) {
     return (
@@ -85,28 +93,83 @@ export default function ProjectPage() {
       </div>
 
       <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-faint">
-          Devlogs
-        </h2>
-
-        <div className="mb-4">
-          <Composer
-            pinnedRepo={repo}
-            onPosted={() => qc.invalidateQueries({ queryKey: keys.projectPosts(fullName) })}
+        <div className="mb-4 flex gap-1 border-b border-border-strong">
+          <TabButton
+            active={tab === "devlogs"}
+            onClick={() => setTab("devlogs")}
+            icon={<ScrollText className="h-4 w-4" />}
+            label="Devlogs"
+          />
+          <TabButton
+            active={tab === "chat"}
+            onClick={() => setTab("chat")}
+            icon={<MessagesSquare className="h-4 w-4" />}
+            label="Chat"
           />
         </div>
 
-        <div className="space-y-4">
-          {posts && posts.results.length > 0 ? (
-            posts.results.map((post) => <PostCard key={post.id} post={post} />)
-          ) : (
-            <EmptyState
-              title="No devlogs yet"
-              description="Be the first to post an update about this project."
-            />
-          )}
-        </div>
+        {tab === "devlogs" ? (
+          <>
+            <div className="mb-4">
+              <Composer
+                pinnedRepo={repo}
+                onPosted={() =>
+                  qc.invalidateQueries({ queryKey: keys.projectPosts(fullName) })
+                }
+              />
+            </div>
+
+            <div className="space-y-4">
+              {posts.length > 0 ? (
+                <>
+                  {posts.map((post) => (
+                    <PostCard key={post.id} post={post} />
+                  ))}
+                  <LoadMore
+                    hasNextPage={postsQuery.hasNextPage}
+                    isFetchingNextPage={postsQuery.isFetchingNextPage}
+                    fetchNextPage={postsQuery.fetchNextPage}
+                  />
+                </>
+              ) : (
+                <EmptyState
+                  title="No devlogs yet"
+                  description="Be the first to post an update about this project."
+                />
+              )}
+            </div>
+          </>
+        ) : (
+          <ChatPanel owner={repo.owner_login} name={repo.name} />
+        )}
       </div>
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+        active
+          ? "border-accent text-fg"
+          : "border-transparent text-muted hover:text-fg",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

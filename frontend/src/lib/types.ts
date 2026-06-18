@@ -33,11 +33,21 @@ export interface Repo {
   pushed_at: string | null;
 }
 
+/** Slim repo shape returned by the composer autofill endpoint. */
+export interface RepoSuggestion {
+  full_name: string;
+  name: string;
+  owner_login: string;
+  description: string;
+  language: string;
+  stargazers_count: number;
+}
+
 export interface Post {
   id: string;
   author: Author;
   caption: string;
-  image: string;
+  image: string | null;
   repo: Repo | null;
   created_at: string;
   num_likes: number;
@@ -49,6 +59,14 @@ export interface Comment {
   id: number;
   post: string;
   parent: number | null;
+  author: Author;
+  body: string;
+  replies_count: number;
+  created_at: string;
+}
+
+export interface ChatMessage {
+  id: number;
   author: Author;
   body: string;
   created_at: string;
