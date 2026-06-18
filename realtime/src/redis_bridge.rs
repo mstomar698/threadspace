@@ -37,6 +37,7 @@ async fn run(url: String, hub: Hub) -> redis::RedisResult<()> {
             Ok(event) => {
                 hub.publish(Delivery {
                     audience: None,
+                    room: None,
                     event,
                 });
             }

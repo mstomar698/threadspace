@@ -18,6 +18,10 @@ pub struct WsParams {
     /// absent the client still receives broadcast events.
     #[serde(default)]
     pub user: Option<String>,
+    /// When set, the client subscribes to a single room (e.g. a project's chat
+    /// keyed by `owner/name`) and receives only that room's events.
+    #[serde(default)]
+    pub room: Option<String>,
 }
 
 pub async fn ws_handler(
@@ -25,14 +29,19 @@ pub async fn ws_handler(
     Query(params): Query<WsParams>,
     upgrade: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    upgrade.on_upgrade(move |socket| handle_socket(socket, state, params.user))
+    upgrade.on_upgrade(move |socket| handle_socket(socket, state, params.user, params.room))
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState, user: Option<String>) {
+async fn handle_socket(
+    socket: WebSocket,
+    state: AppState,
+    user: Option<String>,
+    room: Option<String>,
+) {
     let (mut sender, mut receiver) = socket.split();
     let mut rx = state.hub.subscribe();
 
-    let hello = serde_json::json!({ "type": "connected", "user": user });
+    let hello = serde_json::json!({ "type": "connected", "user": user, "room": room });
     if sender
         .send(Message::Text(hello.to_string().into()))
         .await
@@ -46,7 +55,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, user: Option<String>)
         loop {
             match rx.recv().await {
                 Ok(delivery) => {
-                    if !should_deliver(&delivery.audience, &user) {
+                    if !should_deliver(&delivery, &user, &room) {
                         continue;
                     }
                     let Ok(text) = serde_json::to_string(&delivery.event) else {

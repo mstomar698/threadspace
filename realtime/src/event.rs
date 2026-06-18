@@ -28,20 +28,41 @@ pub struct Event {
     pub created_at: String,
 }
 
-/// An event plus its delivery target. `audience == None` broadcasts to every
-/// connected client; otherwise only clients whose username is in the set
-/// receive it (this is how follower fan-out is targeted).
+/// An event plus its delivery target.
+///
+/// - `room == Some(r)` is a room-scoped delivery (e.g. a project's chat): only
+///   connections subscribed to room `r` receive it.
+/// - `room == None`, `audience == None` broadcasts to every non-room connection.
+/// - `room == None`, `audience == Some(set)` targets connections whose username
+///   is in `set` (follower fan-out).
+///
+/// Room connections and feed connections are kept separate: a room subscriber
+/// only ever sees its own room's events, never global broadcasts/fan-out.
 #[derive(Debug, Clone)]
 pub struct Delivery {
     pub audience: Option<HashSet<String>>,
+    pub room: Option<String>,
     pub event: Event,
 }
 
-/// Decide whether a delivery should reach a given connection.
-pub fn should_deliver(audience: &Option<HashSet<String>>, user: &Option<String>) -> bool {
-    match audience {
-        None => true,
-        Some(set) => user.as_ref().is_some_and(|name| set.contains(name)),
+/// Decide whether a delivery should reach a connection identified by its
+/// `user` (optional username) and `conn_room` (optional subscribed room).
+pub fn should_deliver(
+    delivery: &Delivery,
+    user: &Option<String>,
+    conn_room: &Option<String>,
+) -> bool {
+    match (&delivery.room, conn_room) {
+        // Room-scoped delivery reaches only subscribers of that exact room.
+        (Some(target), Some(joined)) => target == joined,
+        (Some(_), None) => false,
+        // A room connection ignores non-room (broadcast / fan-out) traffic.
+        (None, Some(_)) => false,
+        // Feed connection: broadcast to all, or fan-out to the named audience.
+        (None, None) => match &delivery.audience {
+            None => true,
+            Some(set) => user.as_ref().is_some_and(|name| set.contains(name)),
+        },
     }
 }
 
@@ -53,19 +74,70 @@ mod tests {
         Some(names.iter().map(|s| s.to_string()).collect())
     }
 
+    fn delivery(audience: Option<HashSet<String>>, room: Option<&str>) -> Delivery {
+        Delivery {
+            audience,
+            room: room.map(|s| s.to_string()),
+            event: Event {
+                kind: "post.created".into(),
+                actor: "alice".into(),
+                title: None,
+                url: None,
+                repo: None,
+                post_id: None,
+                created_at: String::new(),
+            },
+        }
+    }
+
     #[test]
-    fn broadcast_reaches_everyone() {
-        assert!(should_deliver(&None, &None));
-        assert!(should_deliver(&None, &Some("anyone".into())));
+    fn broadcast_reaches_every_feed_connection() {
+        let d = delivery(None, None);
+        assert!(should_deliver(&d, &None, &None));
+        assert!(should_deliver(&d, &Some("anyone".into()), &None));
     }
 
     #[test]
     fn targeted_delivery_matches_only_audience_members() {
-        let aud = audience(&["alice", "bob"]);
-        assert!(should_deliver(&aud, &Some("alice".into())));
-        assert!(should_deliver(&aud, &Some("bob".into())));
-        assert!(!should_deliver(&aud, &Some("carol".into())));
-        assert!(!should_deliver(&aud, &None));
+        let d = delivery(audience(&["alice", "bob"]), None);
+        assert!(should_deliver(&d, &Some("alice".into()), &None));
+        assert!(should_deliver(&d, &Some("bob".into()), &None));
+        assert!(!should_deliver(&d, &Some("carol".into()), &None));
+        assert!(!should_deliver(&d, &None, &None));
+    }
+
+    #[test]
+    fn room_delivery_reaches_only_that_rooms_subscribers() {
+        let d = delivery(None, Some("octo/cat"));
+        assert!(should_deliver(
+            &d,
+            &Some("alice".into()),
+            &Some("octo/cat".into())
+        ));
+        // Wrong room, or not in any room → no delivery.
+        assert!(!should_deliver(
+            &d,
+            &Some("alice".into()),
+            &Some("other/repo".into())
+        ));
+        assert!(!should_deliver(&d, &Some("alice".into()), &None));
+    }
+
+    #[test]
+    fn room_connections_ignore_broadcast_and_fanout() {
+        let broadcast = delivery(None, None);
+        let fanout = delivery(audience(&["alice"]), None);
+        // A connection subscribed to a room only ever sees its room's events.
+        assert!(!should_deliver(
+            &broadcast,
+            &Some("alice".into()),
+            &Some("octo/cat".into())
+        ));
+        assert!(!should_deliver(
+            &fanout,
+            &Some("alice".into()),
+            &Some("octo/cat".into())
+        ));
     }
 
     #[test]

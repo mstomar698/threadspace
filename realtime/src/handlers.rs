@@ -24,6 +24,10 @@ pub async fn health() -> impl IntoResponse {
 pub struct PublishRequest {
     #[serde(default)]
     pub audience: Option<Vec<String>>,
+    /// When set, the event is delivered only to subscribers of this room
+    /// (e.g. a project's chat keyed by `owner/name`).
+    #[serde(default)]
+    pub room: Option<String>,
     pub event: Event,
 }
 
@@ -51,6 +55,7 @@ pub async fn publish(
         .map(|names| names.into_iter().collect::<HashSet<_>>());
     let receivers = state.hub.publish(Delivery {
         audience,
+        room: req.room,
         event: req.event,
     });
 
@@ -91,6 +96,7 @@ pub async fn github_webhook(
         Some(event) => {
             let receivers = state.hub.publish(Delivery {
                 audience: None,
+                room: None,
                 event,
             });
             (

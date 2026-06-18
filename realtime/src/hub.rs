@@ -54,6 +54,7 @@ mod tests {
         let mut rx = hub.subscribe();
         let queued = hub.publish(Delivery {
             audience: None,
+            room: None,
             event: sample_event(),
         });
         assert_eq!(queued, 1);
@@ -67,6 +68,7 @@ mod tests {
         assert_eq!(
             hub.publish(Delivery {
                 audience: None,
+                room: None,
                 event: sample_event(),
             }),
             0
