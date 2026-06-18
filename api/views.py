@@ -518,6 +518,10 @@ class PostViewSet(viewsets.ModelViewSet):
         repo = self.request.query_params.get("repo")
         if repo:
             qs = qs.filter(repo__full_name__iexact=repo)
+        mentions = self.request.query_params.get("mentions")
+        if mentions:
+            # Posts that @-mention a user (Explore → Mentions).
+            qs = qs.filter(caption__icontains=f"@{mentions.lstrip('@')}")
         return qs.order_by("-created_at")
 
     def perform_create(self, serializer):

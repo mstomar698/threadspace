@@ -74,6 +74,34 @@ export function useSearch(q: string) {
   });
 }
 
+/** Explore → Posts: posts whose caption/author matches the query. */
+export function usePostSearch(q: string) {
+  return useInfiniteQuery({
+    queryKey: ["post-search", q],
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Post>>(
+        pageParam ?? `/posts/?search=${encodeURIComponent(q)}`,
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
+    enabled: q.trim().length > 0,
+  });
+}
+
+/** Explore → Mentions: posts that @-mention the queried user. */
+export function useMentions(q: string) {
+  return useInfiniteQuery({
+    queryKey: ["mentions", q],
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Post>>(
+        pageParam ?? `/posts/?mentions=${encodeURIComponent(q)}`,
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
+    enabled: q.trim().length > 0,
+  });
+}
+
 export function useComments(postId: string) {
   return useInfiniteQuery({
     queryKey: keys.comments(postId),
@@ -134,6 +162,17 @@ export function useRepo(owner: string, name: string) {
     queryKey: keys.repo(`${owner}/${name}`),
     queryFn: () => api.get<Repo>(`/github/repos/${owner}/${name}/`),
     enabled: !!owner && !!name,
+  });
+}
+
+/** Every cached project (imported by anyone + the synced catalogue), by stars. */
+export function useAllRepos() {
+  return useInfiniteQuery({
+    queryKey: ["repos", "all"],
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<Repo>>(pageParam ?? "/github/repos/"),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next,
   });
 }
 

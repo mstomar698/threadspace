@@ -232,6 +232,22 @@ class TestPosts:
         captions = {p["caption"] for p in resp.data["results"]}
         assert {"from-bob", "from-carol"} <= captions
 
+    def test_search_posts_by_caption(self, auth_alice, bob):
+        Post.objects.create(user=bob, image=tiny_image(), caption="shipping rust today")
+        Post.objects.create(user=bob, image=tiny_image(), caption="python musings")
+        resp = auth_alice.get("/api/v1/posts/?search=rust")
+        captions = {p["caption"] for p in resp.data["results"]}
+        assert captions == {"shipping rust today"}
+
+    def test_mentions_filter(self, auth_alice, bob):
+        Post.objects.create(user=bob, image=tiny_image(), caption="great work @maker 🎉")
+        Post.objects.create(user=bob, image=tiny_image(), caption="no mention here")
+        # Works with or without a leading @.
+        resp = auth_alice.get("/api/v1/posts/?mentions=maker")
+        assert {p["caption"] for p in resp.data["results"]} == {"great work @maker 🎉"}
+        resp2 = auth_alice.get("/api/v1/posts/?mentions=@maker")
+        assert {p["caption"] for p in resp2.data["results"]} == {"great work @maker 🎉"}
+
     def test_feed_ranks_trending_above_quiet_new(self, api, alice, bob):
         # An older but highly-engaged post should rank above a brand-new quiet one.
         from datetime import timedelta

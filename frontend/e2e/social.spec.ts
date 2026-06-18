@@ -6,9 +6,10 @@ const MAKER_POST = "Shipped the first cut of coolproject 🚀";
 test("find a maker, follow them, and see their post in the feed", async ({ page }) => {
   await register(page, uniqueName("follower"));
 
-  // Search the seeded "maker" from Explore and open their profile.
-  await page.goto("/search");
-  await page.getByPlaceholder("Search by username...").fill("maker");
+  // Explore now lives on the feed page: search, switch to the Users tab, and
+  // open the seeded "maker" profile.
+  await page.getByPlaceholder(/Search posts, people, projects/).fill("maker");
+  await page.getByRole("button", { name: "Users" }).click();
   await page.locator('a[href="/maker"]').click();
 
   await expect(page.getByRole("heading", { name: "maker" })).toBeVisible();
