@@ -21,6 +21,10 @@ from core.models import (
 
 User = get_user_model()
 
+# How deeply comment threads may nest (root comment = level 1). Mirrored in the
+# frontend (comment-section.tsx).
+MAX_THREAD_DEPTH = 7
+
 
 class RepoResolveSerializer(serializers.Serializer):
     q = serializers.CharField(help_text="A GitHub repo URL or 'owner/name'.")
@@ -261,15 +265,20 @@ class CommentSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         parent = attrs.get("parent")
         if parent is not None:
-            # Slack-style threads are one level deep: a reply to a reply re-anchors
-            # to the thread root so replies stay flat under the top-level comment.
-            if parent.parent_id is not None:
-                parent = parent.parent
-                attrs["parent"] = parent
             post = attrs.get("post")
             if post is not None and parent.post_id != post.id:
                 raise serializers.ValidationError(
                     {"parent": "Parent comment belongs to a different post."}
+                )
+            # Threads nest up to MAX_THREAD_DEPTH levels (root comment = level 1).
+            depth = 1  # parent's own depth
+            node = parent
+            while node.parent_id:
+                node = node.parent
+                depth += 1
+            if depth + 1 > MAX_THREAD_DEPTH:
+                raise serializers.ValidationError(
+                    {"parent": f"Replies can nest at most {MAX_THREAD_DEPTH} levels deep."}
                 )
         return attrs
 

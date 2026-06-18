@@ -11,6 +11,10 @@ import { MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { Avatar } from "./ui/avatar";
 
+// How deeply threads may nest (root comment = level 1). Mirrors the backend
+// (api/serializers.py MAX_THREAD_DEPTH).
+const MAX_THREAD_DEPTH = 7;
+
 export function CommentSection({ postId }: { postId: string }) {
   const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
     useComments(postId);
@@ -46,7 +50,7 @@ export function CommentSection({ postId }: { postId: string }) {
       ) : (
         <ul className="space-y-3">
           {comments.map((c) => (
-            <CommentItem key={c.id} comment={c} postId={postId} />
+            <CommentItem key={c.id} comment={c} postId={postId} depth={1} />
           ))}
           {comments.length === 0 && (
             <p className="py-2 text-center text-sm text-faint">No comments yet.</p>
@@ -62,8 +66,6 @@ export function CommentSection({ postId }: { postId: string }) {
   );
 }
 
-/** A row showing one comment's body + author, with a Slack-style thread of
- * replies that expands on demand. */
 function CommentRow({ comment }: { comment: Comment }) {
   return (
     <div className="flex gap-2.5">
@@ -77,18 +79,24 @@ function CommentRow({ comment }: { comment: Comment }) {
           <span className="font-medium">{comment.author.username}</span>{" "}
           <span className="text-xs text-faint">{timeAgo(comment.created_at)}</span>
         </p>
-        <p className="text-sm text-muted">{comment.body}</p>
+        <p className="whitespace-pre-wrap break-words text-sm text-muted">
+          {comment.body}
+        </p>
       </div>
     </div>
   );
 }
 
+/** One comment plus its thread. Renders its replies as nested CommentItems
+ * (recursively) up to MAX_THREAD_DEPTH levels. */
 function CommentItem({
   comment,
   postId,
+  depth,
 }: {
   comment: Comment;
   postId: string;
+  depth: number;
 }) {
   const [open, setOpen] = useState(false);
   const [replying, setReplying] = useState(false);
@@ -96,6 +104,7 @@ function CommentItem({
   const addReply = useAddComment(postId);
   const repliesQuery = useReplies(comment.id, open);
   const replies = repliesQuery.data?.pages.flatMap((p) => p.results) ?? [];
+  const canReply = depth < MAX_THREAD_DEPTH;
 
   async function submitReply(e: React.FormEvent) {
     e.preventDefault();
@@ -111,13 +120,15 @@ function CommentItem({
       <CommentRow comment={comment} />
 
       <div className="ml-[38px] mt-1 flex items-center gap-3 text-xs text-faint">
-        <button
-          type="button"
-          onClick={() => setReplying((v) => !v)}
-          className="hover:text-fg"
-        >
-          Reply
-        </button>
+        {canReply && (
+          <button
+            type="button"
+            onClick={() => setReplying((v) => !v)}
+            className="hover:text-fg"
+          >
+            Reply
+          </button>
+        )}
         {comment.replies_count > 0 && (
           <button
             type="button"
@@ -150,7 +161,7 @@ function CommentItem({
       )}
 
       {open && (
-        <div className="ml-[38px] mt-2 space-y-3 border-l border-border-strong pl-3">
+        <ul className="ml-4 mt-2 space-y-3 border-l border-border-strong pl-3">
           {repliesQuery.isLoading ? (
             <div className="py-2">
               <Spinner className="h-4 w-4" />
@@ -158,7 +169,12 @@ function CommentItem({
           ) : (
             <>
               {replies.map((r) => (
-                <CommentRow key={r.id} comment={r} />
+                <CommentItem
+                  key={r.id}
+                  comment={r}
+                  postId={postId}
+                  depth={depth + 1}
+                />
               ))}
               <LoadMore
                 hasNextPage={repliesQuery.hasNextPage}
@@ -168,7 +184,7 @@ function CommentItem({
               />
             </>
           )}
-        </div>
+        </ul>
       )}
     </li>
   );

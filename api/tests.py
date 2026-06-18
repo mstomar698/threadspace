@@ -284,18 +284,33 @@ class TestProfilesAndComments:
         thread = auth_alice.get(f"/api/v1/comments/?parent={top.id}")
         assert {c["body"] for c in thread.data["results"]} == {"a reply"}
 
-    def test_reply_to_reply_reanchors_to_root(self, auth_alice, bob):
+    def test_replies_nest_deeply(self, auth_alice, bob):
         post = Post.objects.create(user=bob, image=tiny_image(), caption="bob")
         top = Comment.objects.create(user=bob, post=post, body="top")
         reply = Comment.objects.create(user=bob, post=post, body="reply", parent=top)
-        # Replying to a reply should re-anchor to the thread root (one level deep).
+        # Replying to a reply nests under it (no re-anchoring to the root).
         resp = auth_alice.post(
             "/api/v1/comments/",
             {"post": str(post.id), "parent": reply.id, "body": "deep"},
             format="json",
         )
         assert resp.status_code == 201
-        assert resp.data["parent"] == top.id
+        assert resp.data["parent"] == reply.id
+
+    def test_thread_depth_capped_at_seven(self, auth_alice, bob):
+        post = Post.objects.create(user=bob, image=tiny_image(), caption="bob")
+        # Build a chain 7 levels deep (L1..L7).
+        node = Comment.objects.create(user=bob, post=post, body="L1")
+        for level in range(2, 8):
+            node = Comment.objects.create(user=bob, post=post, body=f"L{level}", parent=node)
+        # An 8th level is rejected.
+        resp = auth_alice.post(
+            "/api/v1/comments/",
+            {"post": str(post.id), "parent": node.id, "body": "L8"},
+            format="json",
+        )
+        assert resp.status_code == 400
+        assert "parent" in resp.data
 
     def test_search_profiles(self, auth_alice):
         make_user("zebra")

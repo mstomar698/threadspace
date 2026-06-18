@@ -114,6 +114,64 @@ class TestViews:
         assert "signin" in resp.url
 
 
+class TestSeedThreads:
+    def _seed_base(self):
+        # A post + repo for threads/chat to attach to.
+        repo = Repo.objects.create(
+            full_name="o/r", name="r", owner_login="o", html_url="https://x/o/r"
+        )
+        author = make_user("author")
+        post = Post.objects.create(user=author, image=tiny_image(), caption="p")
+        return repo, post
+
+    def test_seeds_deep_threads_and_chat_with_owner(self, db):
+        from django.contrib.auth import get_user_model
+        from django.core.management import call_command
+
+        from core.models import ChatMessage, Comment
+
+        self._seed_base()
+        call_command("seed_threads", "--depth", "7")
+
+        User = get_user_model()
+        owner = User.objects.get(username="mstomar698")
+
+        # Chat messages exist.
+        assert ChatMessage.objects.count() > 0
+
+        # A 7-deep chain exists: walk parents from the deepest comment.
+        deepest = max(
+            (c for c in Comment.objects.all()),
+            key=lambda c: _depth(c),
+            default=None,
+        )
+        assert deepest is not None
+        assert _depth(deepest) >= 7
+
+        # The owner participates somewhere in the threads.
+        assert Comment.objects.filter(user=owner).exists()
+
+    def test_idempotent(self, db):
+        from django.core.management import call_command
+
+        from core.models import ChatMessage, Comment
+
+        self._seed_base()
+        call_command("seed_threads")
+        c1, m1 = Comment.objects.count(), ChatMessage.objects.count()
+        call_command("seed_threads")
+        assert (Comment.objects.count(), ChatMessage.objects.count()) == (c1, m1)
+
+
+def _depth(comment):
+    d = 1
+    node = comment
+    while node.parent_id:
+        node = node.parent
+        d += 1
+    return d
+
+
 class TestSyncTopRepos:
     def _catalogue(self):
         return [
